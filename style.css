@@ -211,3 +211,9 @@ body {
     background-color: var(--active-header-bg) !important;
     color: var(--active-header-text) !important;
 }
+
+/* 10. 전체 행/열 선택 시 활성화되는 은은한 투명 블루 배경 효과 */
+.selected-cell {
+    background-color: rgba(2, 132, 199, 0.08) !important;
+    font-weight: 500;
+}
