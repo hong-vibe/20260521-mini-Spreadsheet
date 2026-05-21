@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Spreadsheet</title>
+    <!-- 프리미엄 디자인을 위한 모던 Inter 폰트 웹로드 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 커스텀 스타일시트 연결 -->
+    <link rel="stylesheet" href="style.css">
+    <!-- 엑셀 데이터 파싱 및 다운로드를 위한 SheetJS CDN 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 상단 헤더 및 제어 바 영역 -->
+        <header class="control-bar">
+            <div class="logo-area">
+                <span class="logo-icon">📊</span>
+                <h1>Mini Spreadsheet</h1>
+            </div>
+            <div class="action-area">
+                <!-- 포커스된 셀의 좌표를 실시간으로 보여줄 인디케이터 (기본 텍스트 필수 준수) -->
+                <div id="current-cell" class="cell-indicator">Cell: 선택 안 됨</div>
+                <!-- 스프레드시트 엑셀 내보내기 버튼 -->
+                <button id="export-btn" class="btn btn-primary">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                    Export Spreadsheet
+                </button>
+            </div>
+        </header>
+
+        <!-- 메인 스프레드시트 그리드 영역 -->
+        <main class="grid-container">
+            <table class="spreadsheet-table">
+                <thead>
+                    <tr>
+                        <!-- 행 헤더 열과 교차하는 왼쪽 최상단 코너 셀 -->
+                        <th class="corner-header"></th>
+                        <!-- 열 헤더 A~I 생성 -->
+                        <th data-header-col="A">A</th>
+                        <th data-header-col="B">B</th>
+                        <th data-header-col="C">C</th>
+                        <th data-header-col="D">D</th>
+                        <th data-header-col="E">E</th>
+                        <th data-header-col="F">F</th>
+                        <th data-header-col="G">G</th>
+                        <th data-header-col="H">H</th>
+                        <th data-header-col="I">I</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 행 1~9 생성 -->
+                    <!-- 각 td 내부에는 편집이 가능한 input 필드가 포함됨 -->
+                    <!-- JS 연동을 극대화하기 위해 data 속성 정의 -->
+                    <tr>
+                        <th data-header-row="1">1</th>
+                        <td><input type="text" class="cell-input" data-cell="A1" data-col="A" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="B1" data-col="B" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="C1" data-col="C" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="D1" data-col="D" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="E1" data-col="E" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="F1" data-col="F" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="G1" data-col="G" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="H1" data-col="H" data-row="1"></td>
+                        <td><input type="text" class="cell-input" data-cell="I1" data-col="I" data-row="1"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="2">2</th>
+                        <td><input type="text" class="cell-input" data-cell="A2" data-col="A" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="B2" data-col="B" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="C2" data-col="C" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="D2" data-col="D" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="E2" data-col="E" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="F2" data-col="F" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="G2" data-col="G" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="H2" data-col="H" data-row="2"></td>
+                        <td><input type="text" class="cell-input" data-cell="I2" data-col="I" data-row="2"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="3">3</th>
+                        <td><input type="text" class="cell-input" data-cell="A3" data-col="A" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="B3" data-col="B" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="C3" data-col="C" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="D3" data-col="D" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="E3" data-col="E" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="F3" data-col="F" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="G3" data-col="G" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="H3" data-col="H" data-row="3"></td>
+                        <td><input type="text" class="cell-input" data-cell="I3" data-col="I" data-row="3"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="4">4</th>
+                        <td><input type="text" class="cell-input" data-cell="A4" data-col="A" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="B4" data-col="B" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="C4" data-col="C" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="D4" data-col="D" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="E4" data-col="E" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="F4" data-col="F" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="G4" data-col="G" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="H4" data-col="H" data-row="4"></td>
+                        <td><input type="text" class="cell-input" data-cell="I4" data-col="I" data-row="4"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="5">5</th>
+                        <td><input type="text" class="cell-input" data-cell="A5" data-col="A" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="B5" data-col="B" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="C5" data-col="C" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="D5" data-col="D" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="E5" data-col="E" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="F5" data-col="F" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="G5" data-col="G" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="H5" data-col="H" data-row="5"></td>
+                        <td><input type="text" class="cell-input" data-cell="I5" data-col="I" data-row="5"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="6">6</th>
+                        <td><input type="text" class="cell-input" data-cell="A6" data-col="A" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="B6" data-col="B" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="C6" data-col="C" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="D6" data-col="D" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="E6" data-col="E" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="F6" data-col="F" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="G6" data-col="G" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="H6" data-col="H" data-row="6"></td>
+                        <td><input type="text" class="cell-input" data-cell="I6" data-col="I" data-row="6"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="7">7</th>
+                        <td><input type="text" class="cell-input" data-cell="A7" data-col="A" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="B7" data-col="B" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="C7" data-col="C" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="D7" data-col="D" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="E7" data-col="E" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="F7" data-col="F" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="G7" data-col="G" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="H7" data-col="H" data-row="7"></td>
+                        <td><input type="text" class="cell-input" data-cell="I7" data-col="I" data-row="7"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="8">8</th>
+                        <td><input type="text" class="cell-input" data-cell="A8" data-col="A" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="B8" data-col="B" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="C8" data-col="C" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="D8" data-col="D" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="E8" data-col="E" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="F8" data-col="F" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="G8" data-col="G" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="H8" data-col="H" data-row="8"></td>
+                        <td><input type="text" class="cell-input" data-cell="I8" data-col="I" data-row="8"></td>
+                    </tr>
+                    <tr>
+                        <th data-header-row="9">9</th>
+                        <td><input type="text" class="cell-input" data-cell="A9" data-col="A" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="B9" data-col="B" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="C9" data-col="C" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="D9" data-col="D" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="E9" data-col="E" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="F9" data-col="F" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="G9" data-col="G" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="H9" data-col="H" data-row="9"></td>
+                        <td><input type="text" class="cell-input" data-cell="I9" data-col="I" data-row="9"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </main>
+    </div>
+
+    <!-- 비즈니스 로직 및 이벤트 바인딩 전용 자바스크립트 파일 로드 -->
+    <script src="script.js"></script>
+</body>
+</html>

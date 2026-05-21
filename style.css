@@ -1,0 +1,213 @@
+/* 
+   미니 스프레드시트 디자인 시스템 - 프리미엄 스타일시트
+   구조: Vanilla CSS3 전역 변수 테마 및 컴포넌트 분리
+*/
+
+/* 1. 디자인 시스템 토큰 정의 */
+:root {
+    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --primary-color: #0284c7;         /* 모던 오션 블루 */
+    --primary-hover: #0369a1;         /* 호버 시 짙은 오션 블루 */
+    --bg-body: #f8fafc;               /* 장시간 피로도가 적은 밝은 그레이-블루 */
+    --bg-header: #e0e0e0;             /* 명세서 지정 연한 회색 헤더 */
+    --bg-header-hover: #d2d6dc;
+    --border-color: #cbd5e1;          /* 은은하고 정교한 격자선 컬러 */
+    --border-cell-focus: #0284c7;     /* 셀 선택 시 테두리 색상 */
+    --active-header-bg: #b3e5fc;      /* 명세서 지정 부드러운 하늘색 활성 헤더 */
+    --active-header-text: #025a87;     /* 활성 헤더 강조 텍스트 */
+    --text-dark: #1e293b;             /* 메인 다크 텍스트 */
+    --text-muted: #64748b;            /* 보조 텍스트 */
+    --card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+}
+
+/* 2. 전역 초기화 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--bg-body);
+    color: var(--text-dark);
+    line-height: 1.5;
+    padding: 2rem 1.5rem;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+/* 3. 메인 앱 컨테이너 레이아웃 (유리 모프 효과 가미) */
+.app-container {
+    width: 100%;
+    max-width: 1000px;
+    background-color: #ffffff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: var(--card-shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 4. 상단 제어 바 스타일 */
+.control-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    background-color: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.logo-icon {
+    font-size: 1.75rem;
+}
+
+.logo-area h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    letter-spacing: -0.025em;
+}
+
+.action-area {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* 포커스 셀 좌표 인디케이터 */
+.cell-indicator {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background-color: #f1f5f9;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    min-width: 150px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+/* 엑셀 파일 내보내기 버튼 */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: #ffffff;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.btn-primary:active {
+    transform: translateY(1px);
+}
+
+.btn-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* 5. 스프레드시트 그리드 (테이블) 스타일 */
+.grid-container {
+    overflow-x: auto;
+    background-color: #ffffff;
+    padding: 1.5rem;
+}
+
+.spreadsheet-table {
+    width: 100%;
+    /* 깔끔한 격자 테두리를 위한 border-collapse 필수 사용 */
+    border-collapse: collapse;
+    table-layout: fixed;
+    border: 2px solid var(--border-color);
+}
+
+/* 6. 행/열 헤더 셀 스타일 */
+.spreadsheet-table th {
+    background-color: var(--bg-header); /* 연한 회색 (#e0e0e0) */
+    color: var(--text-dark);
+    font-size: 0.85rem;
+    font-weight: 700; /* 굵은 텍스트 */
+    text-align: center; /* 중심 정렬 */
+    height: 38px;
+    border: 1px solid var(--border-color);
+    user-select: none;
+    transition: background-color 0.2s ease, color 0.2s ease; /* 부드러운 상태 전환 */
+}
+
+/* 열 헤더의 가로 폭 조절 */
+.spreadsheet-table th:not(.corner-header) {
+    width: 10%;
+}
+
+/* 첫 번째 왼쪽 상단 빈 구석 헤더 */
+.corner-header {
+    width: 45px !important;
+    background-color: #f1f3f5 !important;
+}
+
+/* 행 인덱스 헤더 폭 설정 */
+.spreadsheet-table tbody th {
+    width: 45px;
+    background-color: var(--bg-header);
+}
+
+/* 7. 데이터 셀 내부 입력창 스타일 */
+.spreadsheet-table td {
+    height: 38px;
+    border: 1px solid var(--border-color);
+    padding: 0; /* 테두리까지 완전 채우기 위해 0 패딩 */
+}
+
+.cell-input {
+    width: 100%;
+    height: 100%;
+    /* 테두리(border)를 없애고 셀 전체를 채움 */
+    border: none;
+    outline: none;
+    padding: 0 0.75rem;
+    font-family: var(--font-family);
+    font-size: 0.9rem;
+    color: var(--text-dark);
+    background-color: transparent;
+    transition: all 0.15s ease;
+}
+
+/* 8. 포커스(편집) 상태 시 세련된 디자인 연출 */
+.cell-input:focus {
+    background-color: #ffffff;
+    /* 포커스 시 보더링 시뮬레이션: 입체감 있는 링 쉐도우 적용 */
+    box-shadow: inset 0 0 0 2px var(--border-cell-focus);
+}
+
+/* 9. 활성화된 헤더 하이라이트 스타일 클래스 */
+/* 이 클래스가 <th> 요소에 부여되면 하늘색(#b3e5fc)으로 변경 */
+.active-header {
+    background-color: var(--active-header-bg) !important;
+    color: var(--active-header-text) !important;
+}
