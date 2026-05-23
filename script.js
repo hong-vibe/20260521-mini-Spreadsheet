@@ -17,13 +17,27 @@ class SpreadsheetApp {
         this.spreadsheetData = {};
 
         // [복사/선택 범위 상태 관리] 현재 포커스된 단일 셀이나 드래그/선택된 범위 구조를 실시간 추적합니다.
-        // 형태: null 또는 { type: 'cell'|'row'|'col'|'all', col: 'A', row: 1, cell: 'A1' }
+        // 형태: null 또는 { type: 'cell'|'row'|'col'|'all'|'range', col: 'A', row: 1, cell: 'A1', element: tdElement, startCol, startRow, endCol, endRow }
         this.currentSelection = null;
+        
+        // [수정 모드 상태 관리] 현재 셀 내에서 입력창이 활성화된 상태인지 추적합니다.
+        this.isEditing = false;
+
+        // [드래그 범위 선택 상태 관리] 마우스 드래그를 통한 다중 선택 영역을 정교히 추적하기 위한 플래그
+        this.isDragging = false;
+        this.dragStartCell = null; // { col: 'A', row: 1 }
+        this.dragEndCell = null;   // { col: 'C', row: 3 }
+
+        // [열 너비 조절 상태 관리] 피드백 반영 리사이즈 추적 멤버
+        this.isResizing = false;
+        this.resizingTh = null;
+        this.resizeStartX = 0;
+        this.resizeStartWidth = 0;
         
         // [DOM 엘리먼트 캐싱] 자주 접근하는 화면 요소들을 캐시하여 성능을 극대화합니다.
         this.currentCellIndicator = document.getElementById('current-cell');
         this.exportButton = document.getElementById('export-btn');
-        this.cellInputs = document.querySelectorAll('.cell-input');
+        this.cells = document.querySelectorAll('.spreadsheet-cell');
         
         // [초기 구동] 이벤트 리스너 등록을 기점으로 애플리케이션을 구동시킵니다.
         this.init();
@@ -33,30 +47,34 @@ class SpreadsheetApp {
      * 초기화 모듈: 바인딩 로직을 호출합니다.
      */
     init() {
+        this.initColumnResizers(); // <th> 리사이저 핸들 동적 배치
         this.bindEvents();
     }
 
     /**
      * [이벤트 처리 모듈]
-     * 화면 상의 버튼, 입력창, 헤더들에 각 이벤트를 연결하는 단일 책임 메서드입니다.
+     * 화면 상의 버튼, 셀, 헤더들에 각 이벤트를 연결하는 단일 책임 메서드입니다.
      */
     bindEvents() {
-        // A. 개별 셀(Input)들에 대한 멀티 이벤트 연결
-        this.cellInputs.forEach(input => {
-            // 1. 셀 포커스 (마우스 클릭 또는 Tab 진입)
-            input.addEventListener('focus', (e) => this.handleCellFocus(e));
+        // A. 개별 셀(td)들에 대한 이벤트 연결
+        this.cells.forEach(cell => {
+            // 1. 셀 마우스 다운 (단일 클릭 선택 대기 & 드래그 시작 & Shift 클릭 분기)
+            cell.addEventListener('mousedown', (e) => this.handleCellMouseDown(e));
             
-            // 2. 셀 블러 (포커스 이탈)
-            input.addEventListener('blur', () => this.handleCellBlur());
+            // 2. 셀 마우스 엔터 (드래그 동작 중 범위 업데이트)
+            cell.addEventListener('mouseenter', (e) => this.handleCellMouseEnter(e));
             
-            // 3. 키보드 입력 감지 (엔터 및 방향키 탐색 처리)
-            input.addEventListener('keydown', (e) => this.handleCellKeyDown(e));
-            
-            // 4. 데이터 값 실시간 입력 처리
-            input.addEventListener('input', (e) => this.handleCellInput(e));
+            // 3. 셀 더블 클릭 (즉시 수정 모드로 전환)
+            cell.addEventListener('dblclick', (e) => this.handleCellDblClick(e));
         });
 
-        // B. 행/열 헤더(<th>) 클릭을 통한 전체 범위 선택 이벤트 바인딩
+        // B. 전역 마우스 업 이벤트 바인딩 (드래그 피니시 감지)
+        document.addEventListener('mouseup', () => this.handleDocumentMouseUp());
+
+        // C. 전역 키보드 이벤트 바인딩 (선택 대기 상태에서의 방향키 네비게이션 및 타이핑 감지)
+        document.addEventListener('keydown', (e) => this.handleDocumentKeyDown(e));
+
+        // D. 행/열 헤더(<th>) 클릭을 통한 전체 범위 선택 이벤트 바인딩
         const columnHeaders = document.querySelectorAll('th[data-header-col]');
         const rowHeaders = document.querySelectorAll('th[data-header-row]');
 
@@ -68,17 +86,23 @@ class SpreadsheetApp {
             th.addEventListener('click', (e) => this.handleRowHeaderClick(e));
         });
 
-        // C. 좌측 상단 모서리(.corner-header) 클릭 시 9x9 전체 선택 처리 바인딩
+        // E. 좌측 상단 모서리(.corner-header) 클릭 시 9x9 전체 선택 처리 바인딩
         const cornerHeader = document.querySelector('.corner-header');
         if (cornerHeader) {
             cornerHeader.addEventListener('click', () => this.handleCornerHeaderClick());
         }
 
-        // D. 클립보드 복사(Ctrl+C) 및 붙여넣기(Ctrl+V) 이벤트 전역 바인딩
+        // F. 원클릭 목업 주입 Sample 버튼 이벤트 바인딩 (피드백 반영)
+        const sampleBtn = document.getElementById('sample-btn');
+        if (sampleBtn) {
+            sampleBtn.addEventListener('click', () => this.injectSampleMockupData());
+        }
+
+        // G. 클립보드 복사(Ctrl+C) 및 붙여넣기(Ctrl+V) 이벤트 전역 바인딩
         document.addEventListener('copy', (e) => this.handleClipboardCopy(e));
         document.addEventListener('paste', (e) => this.handleClipboardPaste(e));
 
-        // E. 엑셀 내보내기 버튼 클릭 이벤트
+        // H. 엑셀 내보내기 버튼 클릭 이벤트
         this.exportButton.addEventListener('click', () => this.exportToExcel());
     }
 
@@ -155,124 +179,554 @@ class SpreadsheetApp {
     }
 
     /* ==========================================
-       [셀 개별 이벤트 핸들러 모듈]
+       [셀 엑셀식 입력 UX 상태 머신 및 핸들러 모듈]
        ========================================== */
 
     /**
-     * 셀 포커스 핸들러: 실시간 표시기 갱신, 헤더 하이라이팅 및 복사 범위 갱신
+     * 셀 마우스 다운 핸들러: 드래그 범위 선택의 시발점이며, Shift+클릭 조건도 처리합니다.
      */
-    handleCellFocus(e) {
-        // 기존의 행/열 전체 범위 선택이 있었다면 시각 효과 즉시 해제
+    handleCellMouseDown(e) {
+        // 이미 해당 셀을 에딧 중인 상태라면 마우스 클릭 동작 무시
+        if (this.isEditing && this.currentSelection && this.currentSelection.element === e.currentTarget) {
+            return;
+        }
+
+        // 다른 곳을 편집 중이었다면 안전하게 저장 후 탈출
+        if (this.isEditing && this.currentSelection && this.currentSelection.element) {
+            this.exitEditMode(this.currentSelection.element, true);
+        }
+
+        const td = e.currentTarget;
+        const col = td.dataset.col;
+        const row = parseInt(td.dataset.row, 10);
+
+        // A. Shift 키를 누른 상태에서 클릭한 경우: 시작 원점 대비 사각형 범위를 설정함
+        if (e.shiftKey) {
+            e.preventDefault();
+            this.handleShiftClickSelection(td);
+            return;
+        }
+
+        // B. 일반적인 단일 클릭: 초록 테두리를 즉시 씌우고 드래그를 시작함
+        this.selectCell(td);
+        this.isDragging = true;
+        this.dragStartCell = { col, row };
+        this.dragEndCell = { col, row };
+    }
+
+    /**
+     * 셀 마우스 엔터 핸들러: 드래그 활성화 중일 때, 마우스 궤적에 따른 영역을 하이라이트합니다.
+     */
+    handleCellMouseEnter(e) {
+        if (!this.isDragging) return;
+
+        const td = e.currentTarget;
+        const col = td.dataset.col;
+        const row = parseInt(td.dataset.row, 10);
+
+        this.dragEndCell = { col, row };
+        this.updateDragSelection();
+    }
+
+    /**
+     * 전역 마우스 업 핸들러: 드래그를 정지시키고 최종 다중 사각형 선택 영역을 박제 확정합니다.
+     */
+    handleDocumentMouseUp() {
+        if (!this.isDragging) return;
+        this.isDragging = false;
+
+        const start = this.dragStartCell;
+        const end = this.dragEndCell;
+
+        if (!start || !end) return;
+
+        // 시작 좌표와 끝 좌표가 동일하면 단일 셀 선택 상태로 유지
+        if (start.col === end.col && start.row === end.row) {
+            return;
+        }
+
+        // 시작 좌표와 끝 좌표가 다르면 type: 'range' 다중 사각형 셀 영역으로 복사 상태를 지정
+        this.currentSelection = {
+            type: 'range',
+            startCol: start.col,
+            startRow: start.row,
+            endCol: end.col,
+            endRow: end.row,
+            element: this.currentSelection.element // 최초 클릭 셀(초록 테두리 소유)을 타겟 원점으로 유지
+        };
+
+        // 실시간 인디케이터에 선택된 사각형 영역 크기를 표현
+        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+        const sColIdx = cols.indexOf(start.col);
+        const eColIdx = cols.indexOf(end.col);
+        const colCount = Math.abs(sColIdx - eColIdx) + 1;
+        const rowCount = Math.abs(start.row - end.row) + 1;
+        
+        this.setIndicatorText(`Cell: ${colCount}R x ${rowCount}C 범위 선택됨`, true);
+    }
+
+    /**
+     * Shift + 클릭 선택 핸들러: 기존 포커싱 원점을 기준으로 사각형 영역을 계산해 일괄 선택합니다.
+     */
+    handleShiftClickSelection(targetTd) {
+        // 기존 포커스된 원점 셀이 없을 경우 단일 선택 처리
+        if (!this.currentSelection || !this.currentSelection.element) {
+            this.selectCell(targetTd);
+            return;
+        }
+
+        const anchorTd = this.currentSelection.element;
+        const startCol = anchorTd.dataset.col;
+        const startRow = parseInt(anchorTd.dataset.row, 10);
+        
+        const endCol = targetTd.dataset.col;
+        const endRow = parseInt(targetTd.dataset.row, 10);
+
+        this.dragStartCell = { col: startCol, row: startRow };
+        this.dragEndCell = { col: endCol, row: endRow };
+
+        // 시작점의 초록색 선택 테두리는 보존하고, 사각형 영역 업데이트 실행
+        this.updateDragSelection();
+
+        // 선택 범위 상태 박제
+        this.currentSelection = {
+            type: 'range',
+            startCol: startCol,
+            startRow: startRow,
+            endCol: endCol,
+            endRow: endRow,
+            element: anchorTd
+        };
+
+        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+        const sColIdx = cols.indexOf(startCol);
+        const eColIdx = cols.indexOf(endCol);
+        const colCount = Math.abs(sColIdx - eColIdx) + 1;
+        const rowCount = Math.abs(startRow - endRow) + 1;
+
+        this.setIndicatorText(`Cell: ${colCount}R x ${rowCount}C 범위 선택됨`, true);
+    }
+
+    /**
+     * dragStartCell과 dragEndCell 사이의 사각형 영역 내 모든 td에 하이라이트를 실시간 업데이트합니다.
+     */
+    updateDragSelection() {
+        const start = this.dragStartCell;
+        const end = this.dragEndCell;
+
+        if (!start || !end) return;
+
+        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+        const sColIdx = cols.indexOf(start.col);
+        const eColIdx = cols.indexOf(end.col);
+
+        // 최소/최대 인덱스 계산을 통해 드래그 방향에 상관없이 완벽한 사각형 획득
+        const minColIdx = Math.min(sColIdx, eColIdx);
+        const maxColIdx = Math.max(sColIdx, eColIdx);
+        const minRow = Math.min(start.row, end.row);
+        const maxRow = Math.max(start.row, end.row);
+
+        // 기존 다중 셀 선택 스타일들만 걷어냄
         this.clearAllCellSelections();
 
-        const col = e.target.dataset.col;
-        const row = parseInt(e.target.dataset.row, 10);
-        const cellCoord = e.target.dataset.cell;
+        // 2차원 사각형을 돌며 하이라이트 클래스 주입
+        for (let r = minRow; r <= maxRow; r++) {
+            for (let cIdx = minColIdx; cIdx <= maxColIdx; cIdx++) {
+                const colLetter = cols[cIdx];
+                const targetTd = document.querySelector(`.spreadsheet-cell[data-cell="${colLetter}${r}"]`);
+                if (targetTd) {
+                    targetTd.classList.add('selected-cell');
+                }
+            }
+        }
+    }
+
+    /**
+     * 셀 더블 클릭 핸들러: 즉시 수정 모드로 진입합니다.
+     */
+    handleCellDblClick(e) {
+        const td = e.currentTarget;
+        this.enterEditMode(td);
+    }
+
+    /**
+     * 특정 셀을 '선택 대기' 상태(엑셀 초록 테두리)로 전환하는 내부 보조 메서드입니다.
+     */
+    selectCell(tdElement) {
+        // 기존의 모든 시각적 범위 선택 효과 해제
+        this.clearAllCellSelections();
+        this.clearSelectedCellClass();
+
+        const col = tdElement.dataset.col;
+        const row = parseInt(tdElement.dataset.row, 10);
+        const cellCoord = tdElement.dataset.cell;
+
+        // 초록 테두리 클래스 주입
+        tdElement.classList.add('cell-selected');
 
         // UI 갱신
         this.setIndicatorText(`Cell: ${cellCoord}`, true);
         this.highlightCellHeaders(col, row);
 
-        // [복사 범위 관리] 현재 복사 타겟을 이 셀 하나로 제한 지정
+        // 복사 및 키보드 입력을 위해 선택 상태 객체 갱신
         this.currentSelection = {
             type: 'cell',
             col: col,
             row: row,
-            cell: cellCoord
+            cell: cellCoord,
+            element: tdElement
         };
     }
 
     /**
-     * 셀 포커스 이탈 핸들러: 시각 효과 초기화 및 선택 상태 초기화
+     * 기존의 초록 테두리(.cell-selected) 클래스 일괄 제거
      */
-    handleCellBlur() {
-        // 하이라이트 해제 및 기본 텍스트 원복
-        this.clearAllHeaderHighlights();
-        this.setIndicatorText("Cell: 선택 안 됨", false);
-        
-        // 포커스 아웃 시 타겟 선택 해제 (단, 복사를 연이어 바로 하도록 하기 위해
-        // 약간의 딜레이를 주거나 떼어내지 않고 유지하는 경우가 많지만,
-        // 헤더 클릭 범위나 기타 상태들과의 일관성을 맞추기 위해 지표만 안전히 동기화)
+    clearSelectedCellClass() {
+        const selected = document.querySelectorAll('.cell-selected');
+        selected.forEach(el => {
+            el.classList.remove('cell-selected');
+        });
     }
 
     /**
-     * 실시간 텍스트 인풋 감지 핸들러: 데이터 추가/삭제 로직 처리
+     * [수정 모드 진입]: td 내에 임시 input을 생성해 에딧 모드로 변환합니다.
+     * @param {HTMLElement} tdElement 에딧을 시작할 td 엘리먼트
+     * @param {string|null} initialValue 선택 대기 상태에서 타이핑하여 즉시 유입된 덮어쓰기용 첫 글자 값
      */
-    handleCellInput(e) {
-        const cellCoord = e.target.dataset.cell;
-        const value = e.target.value.trim();
+    enterEditMode(tdElement, initialValue = null) {
+        if (this.isEditing) return;
+        this.isEditing = true;
 
-        if (value !== '') {
-            // 값이 채워져 있으면 데이터 업데이트 메서드 실행
-            this.updateCellValue(cellCoord, value);
+        // td에 에딧 활성화 클래스 동적 주입 (style.css와 연동하여 0패딩으로 인풋창이 꽉 차게 됨)
+        tdElement.classList.add('cell-editing-active');
+
+        const cellCoord = tdElement.dataset.cell;
+        
+        // A. 기존에 노출되던 순수 텍스트 값 획득 (혹은 저장된 데이터 상태값)
+        const originalVal = this.spreadsheetData[cellCoord] || '';
+
+        // B. 임시 input 태그 생성 및 커스텀 스타일 클래스 바인딩
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'cell-input-edit';
+
+        // C. 초기 타이핑 문자가 존재하면 덮어쓰고, 없으면 기존 값을 로드함
+        if (initialValue !== null) {
+            input.value = initialValue;
         } else {
-            // 빈 칸으로 변경 시 데이터 완전 소멸 메서드 실행
-            this.deleteCellValue(cellCoord);
+            input.value = originalVal;
         }
+
+        // D. td의 텍스트 노드를 비우고 동적 인풋 삽입
+        tdElement.textContent = '';
+        tdElement.appendChild(input);
+        
+        // E. 즉시 포커스 유도
+        input.focus();
+
+        // 덮어쓰기가 아닌 더블클릭/엔터 진입일 경우 기존 내용 전체 선택 활성화
+        if (initialValue === null) {
+            input.select();
+        }
+
+        // F. 동적 인풋에 대한 이벤트 밀착 바인딩
+        input.addEventListener('keydown', (e) => {
+            const col = tdElement.dataset.col;
+            const row = parseInt(tdElement.dataset.row, 10);
+
+            if (e.key === 'Enter') {
+                // 엔터 입력 시: 값 저장 및 탈출 후 아래쪽 셀로 강제 네비게이션
+                e.preventDefault();
+                this.exitEditMode(tdElement, true);
+                this.moveFocus(col, row + 1);
+            } else if (e.key === 'Escape') {
+                // ESC 입력 시: 값 롤백(저장 안함) 및 수정 상태 복구 탈출
+                e.preventDefault();
+                this.exitEditMode(tdElement, false);
+                // 다시 초록색 선택 상태로 강제 전환
+                this.selectCell(tdElement);
+            } else if (e.key === 'Tab') {
+                // 탭 입력 시: 값 저장 후 오른쪽 셀로 네비게이션
+                e.preventDefault();
+                this.exitEditMode(tdElement, true);
+                const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
+                this.moveFocus(nextCol, row);
+            }
+        });
+
+        // 포커스 아웃(마우스 다른 곳 클릭 등) 발생 시 안전하게 저장 후 소멸
+        input.addEventListener('blur', () => {
+            this.exitEditMode(tdElement, true);
+        });
+    }
+
+    /**
+     * [수정 모드 이탈]: 동적 input을 제거하고 원래의 td 텍스트 렌더링으로 롤백/저장합니다.
+     */
+    exitEditMode(tdElement, shouldSave) {
+        if (!this.isEditing) return;
+
+        // td에 에딧 활성화 클래스 즉시 해제 (style.css와 연동하여 td 고유 패딩이 복원됨)
+        tdElement.classList.remove('cell-editing-active');
+
+        const cellCoord = tdElement.dataset.cell;
+        const input = tdElement.querySelector('.cell-input-edit');
+        
+        if (!input) {
+            this.isEditing = false;
+            return;
+        }
+
+        let finalValue = input.value.trim();
+
+        if (shouldSave) {
+            if (finalValue !== '') {
+                // 데이터 갱신 및 화면 주입
+                this.updateCellValue(cellCoord, finalValue);
+                tdElement.textContent = finalValue;
+            } else {
+                // 빈 칸일 경우 상태 삭제
+                this.deleteCellValue(cellCoord);
+                tdElement.textContent = '';
+            }
+        } else {
+            // 취소 모드일 경우 기존 데이터로 텍스트 환원
+            tdElement.textContent = this.spreadsheetData[cellCoord] || '';
+        }
+
+        // 상태값 초기화
+        this.isEditing = false;
     }
 
     /* ==========================================
-       [키보드 네비게이션 (엔터 & 방향키 이동) 모듈]
+       [키보드 네비게이션 및 전역 덮어쓰기 감지 모듈]
        ========================================== */
 
     /**
-     * 키보드 이벤트 분기 처리: 엔터 키 및 방향키의 이동 제어
+     * 전역 도큐먼트 키다운 이벤트 분기 처리:
+     * 선택 대기 상태에서의 방향키 이동 및 타이핑 시작 시 덮어쓰기 진입 처리
      */
-    handleCellKeyDown(e) {
-        const col = e.target.dataset.col;
-        const row = parseInt(e.target.dataset.row, 10);
-        
+    /**
+     * 전역 도큐먼트 키다운 이벤트 분기 처리:
+     * 선택 대기 상태에서의 방향키 이동 및 타이핑 시작 시 덮어쓰기 진입 처리
+     */
+    handleDocumentKeyDown(e) {
+        // 만약 셀을 편집(에딧)하고 있는 도중에는 전역 방향키 리스너 작동을 배제합니다.
+        if (this.isEditing) return;
+
+        // 선택 대기 중인 영역이 아예 없다면 중단합니다.
+        if (!this.currentSelection) return;
+
+        // A. [피드백 반영] Delete 또는 Backspace 입력 시 선택 영역 전체 일괄 삭제 처리
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault();
+            this.clearSelectionValues();
+            return;
+        }
+
+        // 방향키 및 문자 입력 덮어쓰기는 단일 셀 선택 상태('cell')일 때만 허용합니다.
+        if (this.currentSelection.type !== 'cell') return;
+
+        const col = this.currentSelection.col;
+        const row = this.currentSelection.row;
+        const currentTd = this.currentSelection.element;
+
+        // B. 방향키 및 주요 특수 키 분기
         switch (e.key) {
             case 'Enter':
-                // 1. 엔터 키: 수직 아래 칸으로 포커스 자동 하강 이동
-                e.preventDefault(); // 엔터 키 기본 개행/이동 방지
-                this.moveFocus(col, row + 1);
-                break;
-                
+                // 대기 상태에서 엔터를 누르면 더블클릭 효과로 편집 모드 진입
+                e.preventDefault();
+                this.enterEditMode(currentTd);
+                return;
+
             case 'ArrowUp':
-                // 2. 위쪽 방향키: 위 칸 이동
                 e.preventDefault();
                 this.moveFocus(col, row - 1);
-                break;
+                return;
                 
             case 'ArrowDown':
-                // 3. 아래쪽 방향키: 아래 칸 이동
                 e.preventDefault();
                 this.moveFocus(col, row + 1);
-                break;
+                return;
                 
             case 'ArrowLeft':
-                // 4. 왼쪽 방향키: 왼쪽 열 이동 (아스키코드로 알파벳 마이너스 연산)
                 e.preventDefault();
                 const prevCol = String.fromCharCode(col.charCodeAt(0) - 1);
                 this.moveFocus(prevCol, row);
-                break;
+                return;
                 
             case 'ArrowRight':
-                // 5. 오른쪽 방향키: 오른쪽 열 이동 (아스키코드로 알파벳 플러스 연산)
                 e.preventDefault();
                 const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
                 this.moveFocus(nextCol, row);
-                break;
+                return;
+        }
+
+        // C. 덮어쓰기(Overwrite) 타이핑 즉시 감지 장치:
+        // 단일 문자 입력이면서 메타/단축키(Ctrl, Alt 등)가 개입되지 않았을 때만 작동
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault();
+            // 첫 글자를 품고 즉시 수정 모드로 폭풍 진입합니다!
+            this.enterEditMode(currentTd, e.key);
         }
     }
 
     /**
-     * 특정 좌표로 포커스를 이동하고, 입력창 내부의 내용을 전체 선택(select)해 즉시 덮어쓰기 타이핑을 지원합니다.
+     * 특정 좌표로 포커스(선택 대기)를 즉시 안전 이동시키는 제어 함수입니다.
      */
     moveFocus(col, row) {
         // [경계 조건 방어 코드] 행 범위(1~9)와 열 범위(A~I)를 철저히 검증합니다.
         if (row < 1 || row > 9) return; 
         if (col < 'A' || col > 'I') return; 
 
-        // 이동할 대상 셀의 Input 태그 탐색
-        const targetInput = document.querySelector(`input[data-cell="${col}${row}"]`);
+        // 이동할 대상 셀의 td 태그 탐색
+        const targetTd = document.querySelector(`.spreadsheet-cell[data-cell="${col}${row}"]`);
         
-        if (targetInput) {
-            targetInput.focus();
-            // 포커스 진입 시 텍스트 전체 선택 효과를 부여해 바로 타이핑이 가능하게 유도합니다.
-            targetInput.select(); 
+        if (targetTd) {
+            this.selectCell(targetTd);
         }
+    }
+
+    /**
+     * [피드백 반영] 현재 선택 범위(단일 셀, 범위 드래그, 전체 행/열 등)의 셀 텍스트 및 전역 데이터를 일괄 제거합니다.
+     */
+    clearSelectionValues() {
+        if (!this.currentSelection) return;
+
+        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+
+        switch (this.currentSelection.type) {
+            case 'cell':
+                // 1. 단일 셀 삭제
+                const coord = this.currentSelection.cell;
+                this.deleteCellValue(coord);
+                if (this.currentSelection.element) {
+                    this.currentSelection.element.textContent = '';
+                }
+                break;
+
+            case 'range':
+                // 2. 다중 드래그 사각형 범위 일괄 삭제
+                const sColIdx = cols.indexOf(this.currentSelection.startCol);
+                const eColIdx = cols.indexOf(this.currentSelection.endCol);
+                const minColIdx = Math.min(sColIdx, eColIdx);
+                const maxColIdx = Math.max(sColIdx, eColIdx);
+                
+                const minRow = Math.min(this.currentSelection.startRow, this.currentSelection.endRow);
+                const maxRow = Math.max(this.currentSelection.startRow, this.currentSelection.endRow);
+
+                for (let r = minRow; r <= maxRow; r++) {
+                    for (let cIdx = minColIdx; cIdx <= maxColIdx; cIdx++) {
+                        const colLetter = cols[cIdx];
+                        const cellCoord = `${colLetter}${r}`;
+                        this.deleteCellValue(cellCoord);
+                        const td = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
+                        if (td) td.textContent = '';
+                    }
+                }
+                break;
+
+            case 'col':
+                // 3. 열 전체 일괄 삭제
+                const colLetter = this.currentSelection.col;
+                for (let r = 1; r <= 9; r++) {
+                    const cellCoord = `${colLetter}${r}`;
+                    this.deleteCellValue(cellCoord);
+                    const td = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
+                    if (td) td.textContent = '';
+                }
+                break;
+
+            case 'row':
+                // 4. 행 전체 일괄 삭제
+                const rowNum = this.currentSelection.row;
+                cols.forEach(c => {
+                    const cellCoord = `${c}${rowNum}`;
+                    this.deleteCellValue(cellCoord);
+                    const td = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
+                    if (td) td.textContent = '';
+                });
+                break;
+
+            case 'all':
+                // 5. 시트 전체 초기화 삭제
+                for (let r = 1; r <= 9; r++) {
+                    cols.forEach(c => {
+                        const cellCoord = `${c}${r}`;
+                        this.deleteCellValue(cellCoord);
+                        const td = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
+                        if (td) td.textContent = '';
+                    });
+                }
+                break;
+        }
+        console.log("선택 범위 일괄 삭제 처리 완료.");
+    }
+
+    /* ==========================================
+       [피드백 반영 - 열 가로 너비(Width) 조절 마우스 조작 모듈]
+       ========================================== */
+
+    /**
+     * 각 열 헤더<th> 우측 끝단에 드래그 리사이즈 핸들 DOM을 동적 부착합니다.
+     */
+    initColumnResizers() {
+        const columnHeaders = document.querySelectorAll('th[data-header-col]');
+        columnHeaders.forEach(th => {
+            const handle = document.createElement('div');
+            handle.className = 'resize-handle';
+            th.appendChild(handle);
+
+            // 열 너비 변경 드래그 트리거 바인딩
+            handle.addEventListener('mousedown', (e) => this.handleResizeMouseDown(e, th));
+        });
+    }
+
+    /**
+     * 리사이즈 드래그 시작 mousedown
+     */
+    handleResizeMouseDown(e, th) {
+        e.preventDefault();
+        e.stopPropagation(); // 헤더 자체 클릭(열 전체 선택) 이벤트 전파를 철저히 억제합니다.
+
+        this.isResizing = true;
+        this.resizingTh = th;
+        this.resizeStartX = e.clientX;
+        this.resizeStartWidth = th.offsetWidth;
+
+        // document 전체에 전역 이동 및 마우스 뗌 이벤트를 결합
+        this.resizeMouseMoveHandler = (moveEvt) => this.handleResizeMouseMove(moveEvt);
+        this.resizeMouseUpHandler = () => this.handleResizeMouseUp();
+
+        document.addEventListener('mousemove', this.resizeMouseMoveHandler);
+        document.addEventListener('mouseup', this.resizeMouseUpHandler);
+    }
+
+    /**
+     * 리사이즈 드래그 진행 mousemove
+     */
+    handleResizeMouseMove(e) {
+        if (!this.isResizing || !this.resizingTh) return;
+
+        const deltaX = e.clientX - this.resizeStartX;
+        const newWidth = Math.max(50, this.resizeStartWidth + deltaX); // 최소 너비 50px 방어선 구축
+
+        // 테이블 레이아웃 고유 크기 스타일 실시간 동적 적용
+        this.resizingTh.style.width = `${newWidth}px`;
+    }
+
+    /**
+     * 리사이즈 드래그 종료 mouseup
+     */
+    handleResizeMouseUp() {
+        if (!this.isResizing) return;
+        this.isResizing = false;
+        this.resizingTh = null;
+
+        // 등록된 전역 리스너 소멸 처리 (메모리 누수 원천 방지)
+        document.removeEventListener('mousemove', this.resizeMouseMoveHandler);
+        document.removeEventListener('mouseup', this.resizeMouseUpHandler);
+        console.log("열 너비 리사이징 동작 완료.");
     }
 
     /* ==========================================
@@ -283,9 +737,13 @@ class SpreadsheetApp {
      * 열(세로) 헤더 클릭 핸들러: 전체 열 범위 선택 및 복사 범위 지정
      */
     handleColumnHeaderClick(e) {
+        // 만약 열 리사이징 조작 핸들을 클릭한 경우라면 범위 선택 동작을 취소합니다.
+        if (e.target.classList.contains('resize-handle')) return;
+
         // 1. 기존의 시각적 하이라이트들 일괄 정리
         this.clearAllHeaderHighlights();
         this.clearAllCellSelections();
+        this.clearSelectedCellClass();
 
         // 2. 클릭된 세로 열 문자 파악 (예: "C")
         const col = e.target.dataset.headerCol;
@@ -293,8 +751,8 @@ class SpreadsheetApp {
         // 3. 해당 열 헤더에 활성화 하이라이트 입히기
         e.target.classList.add('active-header');
 
-        // 4. 동일한 열 문자 속성을 가진 모든 <input> 셀을 탐색하여 소프트 블루 배경 주입
-        const targetCells = document.querySelectorAll(`input[data-col="${col}"]`);
+        // 4. 동일한 열 문자 속성을 가진 모든 td 셀을 탐색하여 소프트 블루 배경 주입
+        const targetCells = document.querySelectorAll(`.spreadsheet-cell[data-col="${col}"]`);
         targetCells.forEach(cell => {
             cell.classList.add('selected-cell');
         });
@@ -316,6 +774,7 @@ class SpreadsheetApp {
         // 1. 기존 하이라이트 초기화
         this.clearAllHeaderHighlights();
         this.clearAllCellSelections();
+        this.clearSelectedCellClass();
 
         // 2. 클릭된 가로 행 번호 파악 (예: "5")
         const row = parseInt(e.target.dataset.headerRow, 10);
@@ -323,8 +782,8 @@ class SpreadsheetApp {
         // 3. 해당 행 헤더 활성화 하이라이트 주입
         e.target.classList.add('active-header');
 
-        // 4. 동일한 행 번호 속성을 지닌 가로라인 <input> 셀들 일괄 선택 효과
-        const targetCells = document.querySelectorAll(`input[data-row="${row}"]`);
+        // 4. 동일한 행 번호 속성을 지닌 가로라인 td 셀들 일괄 선택 효과
+        const targetCells = document.querySelectorAll(`.spreadsheet-cell[data-row="${row}"]`);
         targetCells.forEach(cell => {
             cell.classList.add('selected-cell');
         });
@@ -346,6 +805,7 @@ class SpreadsheetApp {
         // 1. 시각 스타일 초기화
         this.clearAllHeaderHighlights();
         this.clearAllCellSelections();
+        this.clearSelectedCellClass();
 
         // 2. 9행(1~9) x 9열(A~I)을 가리키는 모든 헤더 요소를 활성화
         const allThHeaders = document.querySelectorAll('.spreadsheet-table th:not(.corner-header)');
@@ -353,8 +813,8 @@ class SpreadsheetApp {
             th.classList.add('active-header');
         });
 
-        // 3. 81개 전체 셀 입력창을 선택 하이라이트 배경색으로 변경
-        this.cellInputs.forEach(cell => {
+        // 3. 81개 전체 td 셀을 선택 하이라이트 배경색으로 변경
+        this.cells.forEach(cell => {
             cell.classList.add('selected-cell');
         });
 
@@ -390,8 +850,32 @@ class SpreadsheetApp {
                 copyText = this.spreadsheetData[coord] || '';
                 break;
 
+            case 'range':
+                // B. 마우스 드래그 혹은 Shift+클릭 다중 사각형 셀 복사: 선택 사각형 매트릭스를 정밀 TSV 변환
+                const rCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+                const sColIdx = rCols.indexOf(this.currentSelection.startCol);
+                const eColIdx = rCols.indexOf(this.currentSelection.endCol);
+                const minColIdx = Math.min(sColIdx, eColIdx);
+                const maxColIdx = Math.max(sColIdx, eColIdx);
+                
+                const minRow = Math.min(this.currentSelection.startRow, this.currentSelection.endRow);
+                const maxRow = Math.max(this.currentSelection.startRow, this.currentSelection.endRow);
+                
+                const rangeRows = [];
+                for (let r = minRow; r <= maxRow; r++) {
+                    const rowCells = [];
+                    for (let cIdx = minColIdx; cIdx <= maxColIdx; cIdx++) {
+                        const colLetter = rCols[cIdx];
+                        const cellCoord = `${colLetter}${r}`;
+                        rowCells.push(this.spreadsheetData[cellCoord] || '');
+                    }
+                    rangeRows.push(rowCells.join('\t'));
+                }
+                copyText = rangeRows.join('\r\n');
+                break;
+
             case 'col':
-                // B. 세로 열 전체 복사: 1행부터 9행까지 순회하며 수직 형태(개행 구분)로 구성
+                // C. 세로 열 전체 복사: 1행부터 9행까지 순회하며 수직 형태(개행 구분)로 구성
                 const colLetter = this.currentSelection.col;
                 const colValues = [];
                 for (let r = 1; r <= 9; r++) {
@@ -402,7 +886,7 @@ class SpreadsheetApp {
                 break;
 
             case 'row':
-                // C. 가로 행 전체 복사: A열부터 I열까지 순회하며 수평 형태(탭 구분)로 구성
+                // D. 가로 행 전체 복사: A열부터 I열까지 순회하며 수평 형태(탭 구분)로 구성
                 const rowNum = this.currentSelection.row;
                 const rowValues = [];
                 cols.forEach(c => {
@@ -413,7 +897,7 @@ class SpreadsheetApp {
                 break;
 
             case 'all':
-                // D. 시트 전체 복사: 9x9 2차원 데이터를 탭(\t)과 개행(\r\n)으로 바인딩
+                // E. 시트 전체 복사: 9x9 2차원 데이터를 탭(\t)과 개행(\r\n)으로 바인딩
                 const gridRows = [];
                 for (let r = 1; r <= 9; r++) {
                     const rowCells = [];
@@ -440,6 +924,10 @@ class SpreadsheetApp {
      * 붙여넣기(Ctrl+V) 이벤트 가로채기 핸들러:
      * 외부 스프레드시트(구글 시트, 엑셀)에서 복사해 온 TSV 구조를 파싱해 활성 셀 원점(0,0)을 기준으로 2차원 분할 착지시킵니다.
      */
+    /**
+     * 붙여넣기(Ctrl+V) 이벤트 가로채기 핸들러:
+     * 외부 스프레드시트(구글 시트, 엑셀)에서 복사해 온 TSV 구조를 파싱해 활성 셀 원점(0,0)을 기준으로 2차원 분할 착지시킵니다.
+     */
     handleClipboardPaste(e) {
         // 현재 활성화된 포커스 셀이 없거나 단일 셀이 아니라면 붙여넣기를 수행할 원점이 모호하므로 중단합니다.
         if (!this.currentSelection || this.currentSelection.type !== 'cell') return;
@@ -453,51 +941,52 @@ class SpreadsheetApp {
         // 붙여넣기를 전개할 시작 원점 셀 정보 획득
         const startCol = this.currentSelection.col;
         const startRow = this.currentSelection.row;
-        
+
+        e.preventDefault();
+
+        // [피드백 반영] 공통 2차원 해독 모듈(importTSVData)로 파싱 처리를 완전히 이관 단일화
+        this.importTSVData(pastedText, startCol, startRow);
+        console.log("외부 클립보드 다중 셀 2차원 붙여넣기 착지 완료.");
+    }
+
+    /**
+     * [피드백 반영] 탭(TSV)으로 구분된 데이터를 좌표에 맞춰 2차원 해독 렌더링하고 상태 모델에 기입하는 핵심 공통 모듈입니다.
+     */
+    importTSVData(tsvText, startCol, startRow) {
         const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
         const startColIndex = cols.indexOf(startCol);
 
-        // [TSV 데이터 해독기]
-        // 1. 줄바꿈(\r\n 또는 \n)을 근거로 가로 행 데이터들을 분할합니다.
-        let lines = pastedText.split(/\r?\n/);
+        // 1. 줄바꿈을 구분으로 가로 행 분할
+        let lines = tsvText.split(/\r?\n/);
         
-        // 엑셀 등에서 뒤따르는 최하단 불필요한 개행 공백 행이 있으면 필터링해 줍니다.
+        // 뒤따르는 불필요한 개행 공백 행이 있으면 필터링
         if (lines.length > 0 && lines[lines.length - 1] === '') {
             lines.pop();
         }
 
-        // 2. 가로 행 내부 데이터들을 탭(\t) 문자로 구분해 2차원 배열 배열(Matrix)을 빌드합니다.
+        // 2. 가로 행 내부 데이터들을 탭으로 2차원 배열화
         const dataMatrix = lines.map(line => line.split('\t'));
 
-        // 3. 브라우저 본연의 디폴트 붙여넣기 억제 (기본 작동 시 한 인풋 상자 내에 모든 글자가 뭉쳐 기입됩니다)
-        e.preventDefault();
-
-        // 4. 2차원 횡렬 순회 기입 및 상태 동기화 작동
+        // 3. 2차원 루프 순회 돌며 화면 및 비즈니스 데이터 일치 렌더링
         for (let i = 0; i < dataMatrix.length; i++) {
-            // 타겟 행 행 계산
             const targetRow = startRow + i;
-            
-            // [경계 조건 제어] 9행 범위를 초과하는 수직 데이터는 소실 무시 처리
-            if (targetRow > 9) break;
+            if (targetRow > 9) break; // 9행 경계 보호
 
             for (let j = 0; j < dataMatrix[i].length; j++) {
-                // 타겟 열 열 인덱스 계산
                 const targetColIndex = startColIndex + j;
-                
-                // [경계 조건 제어] I열(인덱스 8)을 초과하는 가로 데이터는 무시 처리
-                if (targetColIndex > 8) break;
+                if (targetColIndex > 8) break; // I열 경계 보호
 
                 const targetColLetter = cols[targetColIndex];
                 const targetCoord = `${targetColLetter}${targetRow}`;
                 const cellValue = dataMatrix[i][j].trim();
 
-                // 화면 입력 필드 DOM 탐색 및 값 동기화
-                const cellInput = document.querySelector(`input[data-cell="${targetCoord}"]`);
-                if (cellInput) {
-                    cellInput.value = cellValue;
+                // 화면 td 탐색 및 갱신
+                const cellTd = document.querySelector(`.spreadsheet-cell[data-cell="${targetCoord}"]`);
+                if (cellTd) {
+                    cellTd.textContent = cellValue;
                 }
 
-                // 데이터 비즈니스 로직 동시 갱신 (빈값 여부에 따라 delete 또는 update 처리)
+                // 데이터 모델 동시 갱신
                 if (cellValue !== '') {
                     this.updateCellValue(targetCoord, cellValue);
                 } else {
@@ -505,8 +994,31 @@ class SpreadsheetApp {
                 }
             }
         }
+    }
 
-        console.log("외부 클립보드 다중 셀 2차원 붙여넣기 착지 완료.");
+    /**
+     * [피드백 반영] One-Click 테스트용 목업 데이터를 A1 원점 기점으로 주입합니다.
+     */
+    injectSampleMockupData() {
+        const mockupTSV = `품명\t규격\t수량\t단가\t합계\t상태\t구분\t담당자\t비고
+MacBook Air\tM3 13"\t12\t1590000\t19080000\t입고완료\tIT자산\t김철수\t영업부 지급용
+LG Gram 16\tIntel i7\t8\t1850000\t14800000\t검수중\tIT자산\t이영희\t개발부 지급용
+Dell Monitor\tU2723QE\t15\t650000\t9750000\t발주완료\t디스플레이\t박민수\t디자인팀 추가분
+MX Master 3S\tLogitech\t20\t139000\t2780000\t입고완료\t소모품\t최재원\t공용 사무용품
+Keychron Q1\tGateron\t10\t220000\t2200000\t검수완료\t소모품\t정다은\t프로그래머 전용
+iPad Pro 11\tM2 256G\t5\t1240000\t6200000\t출고완료\t태블릿\t강태호\t기획팀 테스트용
+Galaxy Tab S9\tUltra\t4\t1370000\t5480000\t입고대기\t태블릿\t윤서연\t모바일개발팀
+Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지민\t클라우드 구독`;
+
+        this.importTSVData(mockupTSV, 'A', 1);
+        
+        // 데이터 주입 완료 후 A1 셀을 디폴트 선택 상태로 활성화
+        const firstCell = document.querySelector('.spreadsheet-cell[data-cell="A1"]');
+        if (firstCell) {
+            this.selectCell(firstCell);
+        }
+        
+        console.log("목업 테스트 데이터 주입 성공.");
     }
 
     /* ==========================================

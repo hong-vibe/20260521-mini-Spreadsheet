@@ -127,6 +127,22 @@ body {
     transform: translateY(1px);
 }
 
+/* 보조 Sample 버튼용 은은한 그레이-슬레이트 파스텔 디자인 */
+.btn-secondary {
+    background-color: #f1f5f9;
+    color: var(--text-dark);
+    border: 1px solid #cbd5e1;
+}
+
+.btn-secondary:hover {
+    background-color: #e2e8f0;
+    transform: translateY(-1px);
+}
+
+.btn-secondary:active {
+    transform: translateY(1px);
+}
+
 .btn-icon {
     width: 16px;
     height: 16px;
@@ -157,12 +173,31 @@ body {
     height: 38px;
     border: 1px solid var(--border-color);
     user-select: none;
+    position: relative; /* 우측 리사이즈 핸들의 절대 좌표 기준점 지정 (피드백 반영) */
     transition: background-color 0.2s ease, color 0.2s ease; /* 부드러운 상태 전환 */
+}
+
+/* 열 넓이 조절용 세로 드래그 바 */
+.resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 25;
+    transition: background-color 0.1s ease;
+}
+
+/* 마우스가 경계선에 접근하면 엑셀식 세로선 피드백 제공 */
+.resize-handle:hover {
+    background-color: var(--primary-color);
 }
 
 /* 열 헤더의 가로 폭 조절 */
 .spreadsheet-table th:not(.corner-header) {
-    width: 10%;
+    width: 90px; /* 기존 %단위 대신 px 단위를 기본으로 하여 리사이징 호환성 극대화 */
 }
 
 /* 첫 번째 왼쪽 상단 빈 구석 헤더 */
@@ -177,42 +212,64 @@ body {
     background-color: var(--bg-header);
 }
 
-/* 7. 데이터 셀 내부 입력창 스타일 */
+/* 7. 데이터 셀 스타일 (순수 텍스트 표시 상태) */
 .spreadsheet-table td {
     height: 38px;
     border: 1px solid var(--border-color);
-    padding: 0; /* 테두리까지 완전 채우기 위해 0 패딩 */
+    padding: 0 0.75rem; /* 평소에는 글자 가독성을 위해 상하 0, 좌우 패딩 부여 */
+    background-color: transparent;
+    transition: background-color 0.15s ease;
+    vertical-align: middle; /* 세로 가운데 정렬 */
 }
 
-.cell-input {
+.spreadsheet-cell {
+    font-size: 0.9rem;
+    color: var(--text-dark);
+    user-select: none; /* 드래그로 인한 텍스트 블록 지정 현상 제어 */
+    cursor: default;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis; /* 셀 한계 도달 시 말줄임표 처리 */
+}
+
+/* 동적 인풋이 삽입되어 편집 중일 때는 td 자체의 패딩을 완전히 걷어내어 꽉 차게 만듭니다. */
+.spreadsheet-table td.cell-editing-active {
+    padding: 0 !important;
+}
+
+/* 8. 실제 엑셀 방식의 선택 대기 상태 (Signature Excel Green) */
+.cell-selected {
+    outline: 2px solid #107c41 !important; /* 엑셀 그린 시그니처 테두리 */
+    outline-offset: -2px;                  /* 셀 안쪽으로 아웃라인 밀착 */
+    background-color: rgba(16, 124, 65, 0.05) !important; /* 은은한 초록 하이라이트 */
+    position: relative;
+    z-index: 10;
+}
+
+/* 9. 동적 수정(에딧) 모드용 임시 생성 인풋 스타일 */
+.cell-input-edit {
     width: 100%;
     height: 100%;
-    /* 테두리(border)를 없애고 셀 전체를 채움 */
     border: none;
     outline: none;
-    padding: 0 0.75rem;
+    padding: 0 0.75rem; /* 인풋창 내 텍스트의 패딩 부여 */
     font-family: var(--font-family);
     font-size: 0.9rem;
     color: var(--text-dark);
-    background-color: transparent;
-    transition: all 0.15s ease;
-}
-
-/* 8. 포커스(편집) 상태 시 세련된 디자인 연출 */
-.cell-input:focus {
     background-color: #ffffff;
-    /* 포커스 시 보더링 시뮬레이션: 입체감 있는 링 쉐도우 적용 */
-    box-shadow: inset 0 0 0 2px var(--border-cell-focus);
+    box-shadow: inset 0 0 0 2px #107c41; /* 포커싱 시 엑셀 초록 링 쉐도우 밀착 */
+    box-sizing: border-box;
+    transition: all 0.1s ease;
 }
 
-/* 9. 활성화된 헤더 하이라이트 스타일 클래스 */
+/* 10. 활성화된 헤더 하이라이트 스타일 클래스 */
 /* 이 클래스가 <th> 요소에 부여되면 하늘색(#b3e5fc)으로 변경 */
 .active-header {
     background-color: var(--active-header-bg) !important;
     color: var(--active-header-text) !important;
 }
 
-/* 10. 전체 행/열 선택 시 활성화되는 은은한 투명 블루 배경 효과 */
+/* 11. 전체 행/열 선택 시 활성화되는 은은한 투명 블루 배경 효과 */
 .selected-cell {
     background-color: rgba(2, 132, 199, 0.08) !important;
     font-weight: 500;

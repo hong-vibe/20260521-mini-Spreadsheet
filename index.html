@@ -22,6 +22,13 @@
                 <h1>Mini Spreadsheet</h1>
             </div>
             <div class="action-area">
+                <!-- 원클릭 검증용 9x9 목업 데이터 자동 주입 버튼 (추가 피드백 반영) -->
+                <button id="sample-btn" class="btn btn-secondary">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Sample
+                </button>
                 <!-- 포커스된 셀의 좌표를 실시간으로 보여줄 인디케이터 (기본 텍스트 필수 준수) -->
                 <div id="current-cell" class="cell-indicator">Cell: 선택 안 됨</div>
                 <!-- 스프레드시트 엑셀 내보내기 버튼 -->
@@ -55,115 +62,114 @@
                 </thead>
                 <tbody>
                     <!-- 행 1~9 생성 -->
-                    <!-- 각 td 내부에는 편집이 가능한 input 필드가 포함됨 -->
-                    <!-- JS 연동을 극대화하기 위해 data 속성 정의 -->
+                    <!-- 각 td는 에딧 모드 시 동적으로 input을 생성하며, 평소에는 셀 값만 표현하는 순수 텍스트 상태를 유지합니다. -->
                     <tr>
                         <th data-header-row="1">1</th>
-                        <td><input type="text" class="cell-input" data-cell="A1" data-col="A" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="B1" data-col="B" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="C1" data-col="C" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="D1" data-col="D" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="E1" data-col="E" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="F1" data-col="F" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="G1" data-col="G" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="H1" data-col="H" data-row="1"></td>
-                        <td><input type="text" class="cell-input" data-cell="I1" data-col="I" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="A1" data-col="A" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="B1" data-col="B" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="C1" data-col="C" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="D1" data-col="D" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="E1" data-col="E" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="F1" data-col="F" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="G1" data-col="G" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="H1" data-col="H" data-row="1"></td>
+                        <td class="spreadsheet-cell" data-cell="I1" data-col="I" data-row="1"></td>
                     </tr>
                     <tr>
                         <th data-header-row="2">2</th>
-                        <td><input type="text" class="cell-input" data-cell="A2" data-col="A" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="B2" data-col="B" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="C2" data-col="C" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="D2" data-col="D" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="E2" data-col="E" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="F2" data-col="F" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="G2" data-col="G" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="H2" data-col="H" data-row="2"></td>
-                        <td><input type="text" class="cell-input" data-cell="I2" data-col="I" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="A2" data-col="A" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="B2" data-col="B" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="C2" data-col="C" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="D2" data-col="D" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="E2" data-col="E" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="F2" data-col="F" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="G2" data-col="G" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="H2" data-col="H" data-row="2"></td>
+                        <td class="spreadsheet-cell" data-cell="I2" data-col="I" data-row="2"></td>
                     </tr>
                     <tr>
                         <th data-header-row="3">3</th>
-                        <td><input type="text" class="cell-input" data-cell="A3" data-col="A" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="B3" data-col="B" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="C3" data-col="C" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="D3" data-col="D" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="E3" data-col="E" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="F3" data-col="F" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="G3" data-col="G" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="H3" data-col="H" data-row="3"></td>
-                        <td><input type="text" class="cell-input" data-cell="I3" data-col="I" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="A3" data-col="A" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="B3" data-col="B" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="C3" data-col="C" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="D3" data-col="D" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="E3" data-col="E" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="F3" data-col="F" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="G3" data-col="G" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="H3" data-col="H" data-row="3"></td>
+                        <td class="spreadsheet-cell" data-cell="I3" data-col="I" data-row="3"></td>
                     </tr>
                     <tr>
                         <th data-header-row="4">4</th>
-                        <td><input type="text" class="cell-input" data-cell="A4" data-col="A" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="B4" data-col="B" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="C4" data-col="C" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="D4" data-col="D" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="E4" data-col="E" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="F4" data-col="F" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="G4" data-col="G" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="H4" data-col="H" data-row="4"></td>
-                        <td><input type="text" class="cell-input" data-cell="I4" data-col="I" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="A4" data-col="A" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="B4" data-col="B" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="C4" data-col="C" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="D4" data-col="D" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="E4" data-col="E" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="F4" data-col="F" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="G4" data-col="G" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="H4" data-col="H" data-row="4"></td>
+                        <td class="spreadsheet-cell" data-cell="I4" data-col="I" data-row="4"></td>
                     </tr>
                     <tr>
                         <th data-header-row="5">5</th>
-                        <td><input type="text" class="cell-input" data-cell="A5" data-col="A" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="B5" data-col="B" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="C5" data-col="C" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="D5" data-col="D" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="E5" data-col="E" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="F5" data-col="F" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="G5" data-col="G" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="H5" data-col="H" data-row="5"></td>
-                        <td><input type="text" class="cell-input" data-cell="I5" data-col="I" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="A5" data-col="A" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="B5" data-col="B" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="C5" data-col="C" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="D5" data-col="D" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="E5" data-col="E" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="F5" data-col="F" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="G5" data-col="G" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="H5" data-col="H" data-row="5"></td>
+                        <td class="spreadsheet-cell" data-cell="I5" data-col="I" data-row="5"></td>
                     </tr>
                     <tr>
                         <th data-header-row="6">6</th>
-                        <td><input type="text" class="cell-input" data-cell="A6" data-col="A" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="B6" data-col="B" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="C6" data-col="C" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="D6" data-col="D" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="E6" data-col="E" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="F6" data-col="F" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="G6" data-col="G" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="H6" data-col="H" data-row="6"></td>
-                        <td><input type="text" class="cell-input" data-cell="I6" data-col="I" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="A6" data-col="A" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="B6" data-col="B" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="C6" data-col="C" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="D6" data-col="D" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="E6" data-col="E" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="F6" data-col="F" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="G6" data-col="G" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="H6" data-col="H" data-row="6"></td>
+                        <td class="spreadsheet-cell" data-cell="I6" data-col="I" data-row="6"></td>
                     </tr>
                     <tr>
                         <th data-header-row="7">7</th>
-                        <td><input type="text" class="cell-input" data-cell="A7" data-col="A" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="B7" data-col="B" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="C7" data-col="C" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="D7" data-col="D" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="E7" data-col="E" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="F7" data-col="F" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="G7" data-col="G" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="H7" data-col="H" data-row="7"></td>
-                        <td><input type="text" class="cell-input" data-cell="I7" data-col="I" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="A7" data-col="A" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="B7" data-col="B" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="C7" data-col="C" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="D7" data-col="D" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="E7" data-col="E" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="F7" data-col="F" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="G7" data-col="G" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="H7" data-col="H" data-row="7"></td>
+                        <td class="spreadsheet-cell" data-cell="I7" data-col="I" data-row="7"></td>
                     </tr>
                     <tr>
                         <th data-header-row="8">8</th>
-                        <td><input type="text" class="cell-input" data-cell="A8" data-col="A" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="B8" data-col="B" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="C8" data-col="C" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="D8" data-col="D" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="E8" data-col="E" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="F8" data-col="F" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="G8" data-col="G" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="H8" data-col="H" data-row="8"></td>
-                        <td><input type="text" class="cell-input" data-cell="I8" data-col="I" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="A8" data-col="A" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="B8" data-col="B" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="C8" data-col="C" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="D8" data-col="D" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="E8" data-col="E" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="F8" data-col="F" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="G8" data-col="G" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="H8" data-col="H" data-row="8"></td>
+                        <td class="spreadsheet-cell" data-cell="I8" data-col="I" data-row="8"></td>
                     </tr>
                     <tr>
                         <th data-header-row="9">9</th>
-                        <td><input type="text" class="cell-input" data-cell="A9" data-col="A" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="B9" data-col="B" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="C9" data-col="C" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="D9" data-col="D" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="E9" data-col="E" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="F9" data-col="F" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="G9" data-col="G" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="H9" data-col="H" data-row="9"></td>
-                        <td><input type="text" class="cell-input" data-cell="I9" data-col="I" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="A9" data-col="A" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="B9" data-col="B" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="C9" data-col="C" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="D9" data-col="D" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="E9" data-col="E" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="F9" data-col="F" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="G9" data-col="G" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="H9" data-col="H" data-row="9"></td>
+                        <td class="spreadsheet-cell" data-cell="I9" data-col="I" data-row="9"></td>
                     </tr>
                 </tbody>
             </table>
