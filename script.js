@@ -997,9 +997,31 @@ class SpreadsheetApp {
     }
 
     /**
+     * [피드백 반영] 시트의 모든 값과 내부 데이터 상태를 완전히 초기화(청소)합니다.
+     */
+    clearAllSheetData() {
+        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+        for (let r = 1; r <= 9; r++) {
+            cols.forEach(c => {
+                const cellCoord = `${c}${r}`;
+                this.deleteCellValue(cellCoord);
+                const td = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
+                if (td) td.textContent = '';
+            });
+        }
+    }
+
+    /**
      * [피드백 반영] One-Click 테스트용 목업 데이터를 A1 원점 기점으로 주입합니다.
      */
     injectSampleMockupData() {
+        // [피드백 반영] 예/아니오 대화 경고창 출력 및 유실 방지 가드
+        const proceed = confirm("목업 데이터가 시트에 입력되고 현재 데이터는 지워집니다. 입력할까요?");
+        if (!proceed) return;
+
+        // 기존 모든 시트 데이터를 완벽히 제거 (완전한 오버라이트 주입 사양 충족)
+        this.clearAllSheetData();
+
         const mockupTSV = `품명\t규격\t수량\t단가\t합계\t상태\t구분\t담당자\t비고
 MacBook Air\tM3 13"\t12\t1590000\t19080000\t입고완료\tIT자산\t김철수\t영업부 지급용
 LG Gram 16\tIntel i7\t8\t1850000\t14800000\t검수중\tIT자산\t이영희\t개발부 지급용
