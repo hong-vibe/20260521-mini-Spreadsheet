@@ -1836,11 +1836,11 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             resetBtn.style.pointerEvents = 'none';
         }
 
-        // 4. '테라피 휴식' 버튼 텍스트 변경
+        // 4. '테라피 휴식' 버튼 텍스트 변경 대신 액티브 외곽선 효과 바인딩 (이미지 유지)
         const therapyBtn = document.getElementById('therapy-btn');
         if (therapyBtn) {
-            therapyBtn.textContent = '테라피 종료 🏓';
-            therapyBtn.className = 'btn btn-primary'; // 강조
+            therapyBtn.classList.add('toolbar-btn-active');
+            therapyBtn.setAttribute('title', '자유시간 메모리 게임 종료');
         }
 
         // 5. 은밀한 수식 입력줄 형태의 대시보드 동적 삽입 (테이블 바로 위에 삽입)
@@ -1909,11 +1909,11 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             resetBtn.style.pointerEvents = 'auto';
         }
 
-        // 5. '테라피 휴식' 버튼 복구
+        // 5. '테라피 휴식' 버튼 복구 (액티브 효과 해제, 이미지 유지)
         const therapyBtn = document.getElementById('therapy-btn');
         if (therapyBtn) {
-            therapyBtn.textContent = '테라피 휴식 ☕';
-            therapyBtn.className = 'btn btn-secondary';
+            therapyBtn.classList.remove('toolbar-btn-active');
+            therapyBtn.setAttribute('title', '자유시간 메모리 게임 시작');
         }
 
         // 6. A1~D5의 20개 셀의 스텔스 클래스 및 이벤트 정리, 원본 텍스트 복구

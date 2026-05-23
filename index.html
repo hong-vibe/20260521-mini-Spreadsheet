@@ -15,29 +15,81 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- 상단 헤더 및 제어 바 영역 -->
-        <header class="control-bar">
-            <div class="logo-area">
-                <span class="logo-icon">🏓</span>
-                <h1>PingPong Spreadsheet</h1>
-                <!-- 제목 우측에 초기화 버튼 배치 (높이를 sample 버튼과 동일하게 통일, 아이콘 제거) -->
-                <button id="reset-btn" class="btn btn-secondary" title="앱 처음 상태로 전면 초기화">초기화</button>
+        <!-- 상단 헤더 및 스프레드시트 컨트롤러 (구글 툴바 리모델링) -->
+        <header class="app-header">
+            <!-- 1층: 오피스 위장 전용 타이틀 & 은은한 가짜 서브메뉴 바 -->
+            <div class="title-bar">
+                <div class="logo-area">
+                    <span class="logo-icon">🏓</span>
+                    <span class="app-title">PingPong Spreadsheet</span>
+                </div>
+                <nav class="fake-menubar">
+                    <span class="menu-item" title="가상 파일 메뉴">파일</span>
+                    <span class="menu-item" title="가상 수정 메뉴">수정</span>
+                    <span class="menu-item" title="가상 보기 메뉴">보기</span>
+                    <span class="menu-item" title="가상 삽입 메뉴">삽입</span>
+                    <span class="menu-item" title="가상 서식 메뉴">서식</span>
+                    <span class="menu-item" title="가상 도구 메뉴">도구</span>
+                    <span class="menu-item" title="가상 도움말 메뉴">도움말</span>
+                </nav>
             </div>
-            <div class="action-area">
-                <!-- 실행 취소(Undo) 버튼 - 아이콘 제거 및 한글화 -->
-                <button id="undo-btn" class="btn btn-secondary">되돌리기</button>
-                <!-- 원클릭 검증용 샘플 데이터 자동 주입 버튼 - 한글화 및 아이콘 제거 -->
-                <button id="sample-btn" class="btn btn-secondary">샘플 데이터</button>
-                <!-- 뇌 리프레싱 두뇌 훈련용 독립 게임 모듈 버튼 -->
-                <button id="therapy-btn" class="btn btn-secondary" title="세계 10개국 카드 뒤집기 매칭 게임 시작">테라피 휴식 ☕</button>
-                <!-- 포커스된 셀의 좌표를 실시간으로 보여줄 인디케이터 (너비 고정 및 높이 정합 예정) -->
-                <div id="current-cell" class="cell-indicator">Cell: 선택 안 됨</div>
-                <!-- 스프레드시트 엑셀 내보내기 버튼 - 한글화 및 아이콘(SVG) 유지 -->
-                <button id="export-btn" class="btn btn-primary">
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            
+            <!-- 2층: 구글 스프레드시트 스타일의 플랫 둥근 툴바 -->
+            <div class="google-toolbar">
+                <!-- A. 셀 주소 인디케이터 (Name Box 스타일로 맨 좌측 배치) -->
+                <div id="current-cell" class="toolbar-name-box" title="현재 포커스된 셀 좌표">선택 안 됨</div>
+                
+                <div class="toolbar-separator"></div>
+                
+                <!-- B. 되돌리기 버튼 -->
+                <button id="undo-btn" class="toolbar-btn" title="되돌리기 (Ctrl+Z)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-svg">
+                        <path d="M3 7v6h6"></path>
+                        <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
                     </svg>
-                    내보내기
+                    <span class="btn-text">되돌리기</span>
+                </button>
+                
+                <div class="toolbar-separator"></div>
+                
+                <!-- C. 초기화 버튼 -->
+                <button id="reset-btn" class="toolbar-btn" title="스프레드시트 전면 초기화">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-svg">
+                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                        <path d="M16 3h5v5"></path>
+                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                        <path d="M8 21H3v-5"></path>
+                    </svg>
+                    <span class="btn-text">초기화</span>
+                </button>
+                
+                <div class="toolbar-separator"></div>
+                
+                <!-- D. 샘플 데이터 버튼 -->
+                <button id="sample-btn" class="toolbar-btn" title="목업 데이터 샘플 자동 입력">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-svg">
+                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    </svg>
+                    <span class="btn-text">샘플 데이터</span>
+                </button>
+                
+                <div class="toolbar-separator"></div>
+                
+                <!-- E. 엑셀로 내보내기 버튼 -->
+                <button id="export-btn" class="toolbar-btn toolbar-btn-primary" title="Excel 파일로 다운로드 내보내기">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-svg">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span class="btn-text">엑셀형식 다운로드</span>
+                </button>
+                
+                <div class="toolbar-separator"></div>
+                
+                <!-- F. 자유시간 메모리 게임 버튼 - 원본 png 비율 그대로 단독 사용 -->
+                <button id="therapy-btn" class="toolbar-freetime-btn" title="자유시간 메모리 게임 시작">
+                    <img src="freetime.png" alt="테라피 휴식" class="freetime-img">
                 </button>
             </div>
         </header>
