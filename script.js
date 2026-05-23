@@ -49,6 +49,7 @@ class SpreadsheetApp {
     init() {
         this.initColumnResizers(); // <th> 리사이저 핸들 동적 배치
         this.bindEvents();
+        this.loadFromLocalStorage(); // [2단계] 로컬스토리지에서 기존 데이터 안전 복구 로드
     }
 
     /**
@@ -116,6 +117,7 @@ class SpreadsheetApp {
     updateCellValue(cellCoord, value) {
         this.spreadsheetData[cellCoord] = value;
         console.log('데이터 상태 갱신:', this.spreadsheetData);
+        this.saveToLocalStorage(); // [2단계] 상태 모델 변경 시 실시간 자동 저장 트리거
     }
 
     /**
@@ -124,6 +126,54 @@ class SpreadsheetApp {
     deleteCellValue(cellCoord) {
         delete this.spreadsheetData[cellCoord];
         console.log('데이터 키 삭제 완료:', this.spreadsheetData);
+        this.saveToLocalStorage(); // [2단계] 상태 모델 변경 시 실시간 자동 저장 트리거
+    }
+
+    /* ==========================================
+       [2단계 - 로컬스토리지 자동 저장 및 복구 엔진 모듈]
+       ========================================== */
+
+    /**
+     * [2단계] 현재의 전역 스프레드시트 데이터 상태를 로컬스토리지에 오토 세이브합니다.
+     */
+    saveToLocalStorage() {
+        try {
+            localStorage.setItem('pingpong_spreadsheet_data', JSON.stringify(this.spreadsheetData));
+            console.log('로컬스토리지 자동 저장 성공.');
+        } catch (error) {
+            console.error('로컬스토리지 저장 실패:', error);
+        }
+    }
+
+    /**
+     * [2단계] 페이지 첫 기동 시 로컬스토리지를 검사해 기존 데이터 상태를 완벽 복구 로드합니다.
+     */
+    loadFromLocalStorage() {
+        try {
+            const saved = localStorage.getItem('pingpong_spreadsheet_data');
+            if (saved) {
+                this.spreadsheetData = JSON.parse(saved);
+                console.log('로컬스토리지 복구 데이터 감지:', this.spreadsheetData);
+                this.renderAllData(); // 화면상 모든 td에 복구된 값 렌더링
+            } else {
+                console.log('로컬스토리지에 저장된 이전 세션 데이터가 존재하지 않습니다.');
+            }
+        } catch (error) {
+            console.error('로컬스토리지 복구 처리 중 장애 발생:', error);
+        }
+    }
+
+    /**
+     * [2단계] 복구된 spreadsheetData 상태를 루프하여 9x9 화면 그리드 td 엘리먼트에 고스란히 뿌려줍니다.
+     */
+    renderAllData() {
+        for (const [cellCoord, val] of Object.entries(this.spreadsheetData)) {
+            const cellTd = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
+            if (cellTd) {
+                cellTd.textContent = val;
+            }
+        }
+        console.log('복원 데이터 화면 일괄 렌더링 완성.');
     }
 
     /* ==========================================
