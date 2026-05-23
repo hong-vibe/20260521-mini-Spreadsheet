@@ -1781,7 +1781,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /* ==========================================
-       [5단계 - 테라피 휴식 ☕ 매칭 게임 독립 라이프사이클 엔진]
+       [5단계 - 오피스 스텔스 테라피 휴식 ☕ 매칭 게임 독립 라이프사이클 엔진]
        ========================================== */
 
     /**
@@ -1800,7 +1800,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /**
-     * [5단계] 테라피 휴식 모드 개시: 스프레드시트를 대피시키고 게임 보드를 빌드합니다.
+     * [5단계] 테라피 휴식 모드 개시: 시트를 대피시키지 않고 A1~D5 범위만 위장 테두리를 씌워 플레이합니다.
      */
     startTherapyMode() {
         this.isTherapyMode = true;
@@ -1810,20 +1810,14 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         this.clearSelectedCellClass();
         this.clearAllHeaderHighlights();
 
-        // 2. 기존 데이터 및 크기 레이아웃 완전 메모리 대피 백업
+        // 2. 기존 데이터 및 크기 레이아웃 메모리 백업
         this.sheetBackup = {
             data: JSON.parse(JSON.stringify(this.spreadsheetData)),
             rows: this.maxRows,
             cols: this.maxCols
         };
 
-        // 3. 스프레드시트 컨테이너 숨김 처리
-        const gridContainer = document.querySelector('.grid-container');
-        if (gridContainer) {
-            gridContainer.style.display = 'none';
-        }
-
-        // 4. 기존 액션 버튼들 visually disable 처리
+        // 3. 기존 액션 버튼들 visually disable 처리
         this.exportButton.style.opacity = '0.5';
         this.exportButton.style.pointerEvents = 'none';
         const sampleBtn = document.getElementById('sample-btn');
@@ -1842,40 +1836,38 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             resetBtn.style.pointerEvents = 'none';
         }
 
-        // 5. '테라피 휴식' 버튼 텍스트 변경으로 온/오프 상태 표현
+        // 4. '테라피 휴식' 버튼 텍스트 변경
         const therapyBtn = document.getElementById('therapy-btn');
         if (therapyBtn) {
-            therapyBtn.textContent = '시트로 복귀 🏓';
+            therapyBtn.textContent = '테라피 종료 🏓';
             therapyBtn.className = 'btn btn-primary'; // 강조
         }
 
-        // 6. 게임 전용 보드 오버레이 동적 삽입
+        // 5. 은밀한 수식 입력줄 형태의 대시보드 동적 삽입 (테이블 바로 위에 삽입)
         const appContainer = document.querySelector('.app-container');
-        const overlay = document.createElement('div');
-        overlay.className = 'therapy-overlay';
-        overlay.id = 'therapy-overlay';
+        const gridContainer = document.querySelector('.grid-container');
+        const dashboard = document.createElement('div');
+        dashboard.className = 'therapy-dashboard';
+        dashboard.id = 'therapy-dashboard';
 
-        // 디지털 타이머 및 최고 기록 명판 대시보드
         const bestRecordStr = this.getBestRecord() || '없음';
-        overlay.innerHTML = `
-            <div class="therapy-dashboard">
-                <div>☕ THERAPY TIME - CARD MATCHING</div>
-                <div>
-                    최고 기록: <span class="best-value">${bestRecordStr}</span> | 
-                    시간: <span class="timer-value" id="therapy-timer-val">00:00</span>
-                </div>
+        dashboard.innerHTML = `
+            <div>☕ STEALTH ANALYZER - A1:D5 DATA RANGE SELECTED</div>
+            <div>
+                최고 기록: <span class="best-value">${bestRecordStr}</span> | 
+                경과 시간: <span class="timer-value" id="therapy-timer-val">00:00</span>
             </div>
-            <div class="game-board-5x4" id="game-board"></div>
         `;
 
-        appContainer.appendChild(overlay);
+        // 테이블 컨테이너 이전에 대시보드 삽입
+        appContainer.insertBefore(dashboard, gridContainer);
 
-        // 7. 게임 상태 초기화 및 카드 기하학 렌더링
+        // 6. 게임 상태 초기화 및 카드 기하학 렌더링
         this.initTherapyGame();
     }
 
     /**
-     * [5단계] 테라피 휴식 모드 철수: 게임 보드를 걷어내고 원래 스프레드시트 세션을 백업 복구합니다.
+     * [5단계] 테라피 휴식 모드 철수: 스텔스 카드 테두리를 걷어내고 원래 셀 데이터로 완전 복원합니다.
      */
     stopTherapyMode() {
         this.isTherapyMode = false;
@@ -1886,16 +1878,16 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             this.therapyTimer = null;
         }
 
-        // 2. 게임 전용 오버레이 DOM 영구 삭제
-        const overlay = document.getElementById('therapy-overlay');
-        if (overlay) {
-            overlay.remove();
+        // 2. 은밀한 대시보드 DOM 제거
+        const dashboard = document.getElementById('therapy-dashboard');
+        if (dashboard) {
+            dashboard.remove();
         }
 
-        // 3. 스프레드시트 컨테이너 복원 노출
-        const gridContainer = document.querySelector('.grid-container');
-        if (gridContainer) {
-            gridContainer.style.display = 'block';
+        // 3. 성공 패널이 있으면 제거
+        const successPanel = document.getElementById('stealth-success-panel');
+        if (successPanel) {
+            successPanel.remove();
         }
 
         // 4. 버튼들 활성화 원상복귀
@@ -1924,7 +1916,27 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             therapyBtn.className = 'btn btn-secondary';
         }
 
-        // 6. 데이터 백업 원상 복구 및 DOM 재생성 그리드 리바인딩
+        // 6. A1~D5의 20개 셀의 스텔스 클래스 및 이벤트 정리, 원본 텍스트 복구
+        const cols = ['A', 'B', 'C', 'D'];
+        for (let r = 1; r <= 5; r++) {
+            cols.forEach(c => {
+                const coord = `${c}${r}`;
+                const td = document.querySelector(`.spreadsheet-cell[data-cell="${coord}"]`);
+                if (td) {
+                    // 원래 보존해 둔 텍스트 획득
+                    const originalText = td.getAttribute('data-original-val') || '';
+                    td.textContent = originalText;
+                    
+                    // 스텔스 관련 모든 특성 제거
+                    td.removeAttribute('data-original-val');
+                    td.removeAttribute('data-flag');
+                    td.className = 'spreadsheet-cell';
+                    td.style.padding = '';
+                }
+            });
+        }
+
+        // 7. 데이터 백업 원상 복구 및 DOM 재생성 그리드 리바인딩
         if (this.sheetBackup) {
             this.spreadsheetData = this.sheetBackup.data;
             this.maxRows = this.sheetBackup.rows;
@@ -1932,17 +1944,14 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
         this.rebuildGrid();
 
-        // 7. 인디케이터 초기화
+        // 8. 인디케이터 초기화
         this.setIndicatorText("Cell: 선택 안 됨");
     }
 
     /**
-     * [5단계] 셔플링 및 20개 카드의 기하학적 렌더링 세팅 모듈
+     * [5단계] A1~D5 영역에 위장 테두리를 씌우고 Flag CDN 실물 국기 매핑 렌더링
      */
     initTherapyGame() {
-        const gameBoard = document.getElementById('game-board');
-        if (!gameBoard) return;
-
         // 상태 청소
         this.therapyTimeElapsed = 0;
         this.firstFlippedCard = null;
@@ -1951,7 +1960,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         this.matchedCount = 0;
 
         // 미국, 일본, 이스라엘 국기가 엄격히 배제된 친화 평화 10개국 리스트
-        const baseFlags = ['🇰🇷', '🇫🇷', '🇩🇪', '🇬🇧', '🇨🇦', '🇧🇷', '🇮🇹', '🇪🇸', '🇦🇺', '🇨🇭'];
+        const baseFlags = ['KR', 'FR', 'DE', 'GB', 'CA', 'BR', 'IT', 'ES', 'AU', 'CH'];
         
         // 2쌍씩 20개 매핑
         this.therapyCards = [...baseFlags, ...baseFlags];
@@ -1962,32 +1971,62 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             [this.therapyCards[i], this.therapyCards[j]] = [this.therapyCards[j], this.therapyCards[i]];
         }
 
-        // DOM 카드 요소 20개 생성 및 보드 적재
-        gameBoard.innerHTML = '';
-        this.therapyCards.forEach((flag, idx) => {
-            const card = document.createElement('div');
-            card.className = 'game-card';
-            card.setAttribute('data-index', idx);
-            card.setAttribute('data-flag', flag);
+        // A1~D5 (4열 x 5행 = 20개 셀) 타겟 좌표
+        const targetCoords = [];
+        const cols = ['A', 'B', 'C', 'D'];
+        for (let r = 1; r <= 5; r++) {
+            cols.forEach(c => {
+                targetCoords.push(`${c}${r}`);
+            });
+        }
 
-            card.innerHTML = `
-                <div class="game-card-inner">
-                    <div class="game-card-front">☕</div>
-                    <div class="game-card-back">${flag}</div>
-                </div>
-            `;
+        // 20개 td 셀들을 스텔스 카드로 리빌드
+        targetCoords.forEach((coord, idx) => {
+            const td = document.querySelector(`.spreadsheet-cell[data-cell="${coord}"]`);
+            if (td) {
+                const flagCode = this.therapyCards[idx];
+                const originalVal = td.textContent;
 
-            card.addEventListener('click', () => this.handleCardClick(card));
-            gameBoard.appendChild(card);
+                // 원래 텍스트 및 국기 코드 보존 백업
+                td.setAttribute('data-original-val', originalVal);
+                td.setAttribute('data-flag', flagCode);
+                td.className = 'spreadsheet-cell stealth-game-cell';
+
+                // Y축 3D 뒤집기가 작동하는 이너 구조 렌더링
+                // 윈도우 글자 깨짐 버그 해결을 위해 선명한 고해상도 Flag CDN 실물 img 연동
+                td.innerHTML = `
+                    <div class="stealth-card-inner">
+                        <div class="stealth-card-front">${originalVal}</div>
+                        <div class="stealth-card-back">
+                            <img src="https://flagcdn.com/w40/${flagCode.toLowerCase()}.png" width="32" height="24" style="object-fit:cover; border-radius:2px;">
+                        </div>
+                    </div>
+                `;
+
+                // td 내부에 직접적인 클릭 리스너 결합
+                td.addEventListener('click', (evt) => {
+                    evt.stopPropagation(); // 셀 자체 일반 네비게이션 전파 차단
+                    this.handleCardClick(td);
+                });
+            }
         });
     }
 
     /**
-     * [5단계] 카드 클릭 핸들러: 플립 모션 작동 및 2-Card 짝 맞추기 평가
+     * [5단계] 카드 클릭 핸들러: 플립 모션 작동 및 400ms 기민한 짝 맞추기 평가
      */
     handleCardClick(cardEl) {
-        // 보드 잠금 상태이거나, 이미 뒤집혔거나, 이미 짝이 맞춰진 카드 조작 배제
-        if (this.lockTherapyBoard || cardEl.classList.contains('flipped') || cardEl.classList.contains('matched')) {
+        // 이미 짝이 맞춰진 카드 클릭 시에는 쉐이크 효과도 불필요하므로 무시
+        if (cardEl.classList.contains('matched')) {
+            return;
+        }
+
+        // 보드 잠금 상태이거나, 이미 뒤집힌 셀을 중복 클릭한 경우 (피드백 반영: 흔들림 쉐이크 발동)
+        if (this.lockTherapyBoard || cardEl.classList.contains('flipped')) {
+            cardEl.classList.add('stealth-shake');
+            setTimeout(() => {
+                cardEl.classList.remove('stealth-shake');
+            }, 300);
             return;
         }
 
@@ -2000,10 +2039,10 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
 
         if (!this.firstFlippedCard) {
-            // A. 첫 번째 카드 클릭 박제
+            // A. 첫 번째 카드 클릭
             this.firstFlippedCard = cardEl;
         } else {
-            // B. 두 번째 카드 클릭 박제 및 평가 연산 돌입
+            // B. 두 번째 카드 클릭 및 평가 연산 돌입
             this.secondFlippedCard = cardEl;
             this.lockTherapyBoard = true; // 평가 중 광클 차단
 
@@ -2027,7 +2066,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
                     this.handleTherapyGameClear();
                 }
             } else {
-                // 불일치 시 0.8초 동안 국기를 품은 모습을 눈에 익힌 뒤 원상 플립 복원
+                // 불일치 시 기존 800ms에서 400ms로 전격 단축 (쾌속 플레이 반영)
                 setTimeout(() => {
                     this.firstFlippedCard.classList.remove('flipped');
                     this.secondFlippedCard.classList.remove('flipped');
@@ -2036,7 +2075,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
                     this.firstFlippedCard = null;
                     this.secondFlippedCard = null;
                     this.lockTherapyBoard = false;
-                }, 800);
+                }, 400); // 0.4초 딜레이 튜닝
             }
         }
     }
@@ -2100,40 +2139,35 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         // 3. 로컬기록판 세션 적재
         this.saveTherapyRecord(dateStr, timeStr, elapsedText, this.therapyTimeElapsed);
 
-        // 4. 게임 보드를 소멸시키고 영광의 성공 보고 패널 동적 노출
-        const overlay = document.getElementById('therapy-overlay');
-        if (overlay) {
-            // 기존 5x4 보드 제거
-            const gameBoard = document.getElementById('game-board');
-            if (gameBoard) gameBoard.remove();
+        // 4. 영광의 스텔스 성공 보고 모달 패널 동적 노출 (시트 뷰포트 위에 오버레이)
+        const appContainer = document.querySelector('.app-container');
+        
+        const successDiv = document.createElement('div');
+        successDiv.className = 'stealth-success-panel';
+        successDiv.id = 'stealth-success-panel';
+        successDiv.innerHTML = `
+            <div class="success-title">🎉 리프레싱 스텔스 완수! 🎉</div>
+            <p style="color: #64748b; font-size: 0.85rem; margin-bottom:0.75rem;">A1:D5 업무 위장 범위의 모든 국기 짝을 정확히 맞추고 두뇌 회전을 끝마쳤습니다.</p>
+            
+            <div class="success-stats">
+                <strong>완료 일시:</strong> ${dateStr} ${timeStr}<br>
+                <strong>소요 시간:</strong> <span style="color: #107c41; font-weight:700;">${elapsedText}</span>
+            </div>
 
-            // 성공 축하 템플릿 삽입
-            const successDiv = document.createElement('div');
-            successDiv.className = 'therapy-success';
-            successDiv.innerHTML = `
-                <div class="success-title">🎉 두뇌 리프레싱 성공! 🎉</div>
-                <p style="color: #64748b; font-size: 0.9rem;">10쌍의 평화 국기 카드를 모두 매칭 완료하여 뇌에 산소를 공급했습니다.</p>
-                
-                <div class="success-stats">
-                    <strong>완료 일시:</strong> ${dateStr} ${timeStr}<br>
-                    <strong>소요 시간:</strong> <span style="color: #107c41; font-weight:700;">${elapsedText}</span>
-                </div>
+            <button id="therapy-close-btn" class="btn btn-primary" style="padding: 0.5rem 2rem; font-size:0.95rem; height:38px; width:100%;">시트로 돌아가기 🏓</button>
+            
+            <div class="record-board" id="record-board-container"></div>
+        `;
 
-                <button id="therapy-close-btn" class="btn btn-primary" style="padding: 0.6rem 2rem; font-size:1rem; height:42px;">시트로 돌아가기 🏓</button>
-                
-                <div class="record-board" id="record-board-container"></div>
-            `;
+        appContainer.appendChild(successDiv);
 
-            overlay.appendChild(successDiv);
+        // 명예의 전당 보드판 렌더링
+        this.renderRecordBoard();
 
-            // 명예의 전당 보드판 렌더링
-            this.renderRecordBoard();
-
-            // 시트로 돌아가기 이벤트 바인딩
-            const closeBtn = document.getElementById('therapy-close-btn');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', () => this.toggleTherapyMode());
-            }
+        // 시트로 돌아가기 이벤트 바인딩
+        const closeBtn = document.getElementById('therapy-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.toggleTherapyMode());
         }
     }
 
@@ -2201,7 +2235,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             }
 
             if (records.length === 0) {
-                container.innerHTML = `<div style="text-align:center; color:#a855f7; font-size:0.8rem;">아직 수립된 기록이 없습니다.</div>`;
+                container.innerHTML = `<div style="text-align:center; color:#a855f7; font-size:0.75rem;">아직 수립된 기록이 없습니다.</div>`;
                 return;
             }
 
@@ -2227,7 +2261,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
 
             container.innerHTML = html;
         } catch (e) {
-            container.innerHTML = `<div style="color:red;">기록판 파싱 중 장애가 발생했습니다.</div>`;
+            container.innerHTML = `<div style="color:red; font-size:0.75rem;">기록판 파싱 중 장애가 발생했습니다.</div>`;
         }
     }
 }
