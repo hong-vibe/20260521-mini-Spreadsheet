@@ -85,26 +85,36 @@ body {
     gap: 1rem;
 }
 
-/* 포커스 셀 좌표 인디케이터 */
+/* 포커스 셀 좌표 인디케이터 (버튼들과 동일한 40px 높이 완벽 정합) */
 .cell-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-muted);
     background-color: #f1f5f9;
-    padding: 0.5rem 1rem;
     border-radius: 8px;
     border: 1px solid #e2e8f0;
-    min-width: 150px;
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+    height: 40px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     text-align: center;
     transition: all 0.2s ease;
 }
 
-/* 엑셀 파일 내보내기 버튼 */
+/* 상단 액션/제어 공통 버튼 스타일 (높이 40px 통일 규격) */
 .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
-    padding: 0.5rem 1.25rem;
+    padding: 0 1.25rem;
+    height: 40px; /* 기존 Sample 버튼의 렌더링 세로 규격(40px)과 완벽 정합 */
     font-size: 0.9rem;
     font-weight: 600;
     border-radius: 8px;
@@ -143,9 +153,73 @@ body {
     transform: translateY(1px);
 }
 
+/* 제목 우측 미니 제어용 전용 버튼 규격 */
+.btn-mini {
+    padding: 0.25rem 0.6rem !important;
+    font-size: 0.75rem !important;
+    border-radius: 6px !important;
+    margin-left: 0.5rem;
+    font-weight: 500 !important;
+}
+
 .btn-icon {
     width: 16px;
     height: 16px;
+}
+
+/* 헤더 내부의 동적 미니 추가/삭제 제어 버튼 그룹 스타일 (수직 위아래 정렬 적용) */
+.header-btn-group {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    flex-direction: column; /* 위아래 세로 배치 */
+    gap: 2px;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 0.15s ease-in-out;
+}
+
+/* th에 마우스 호버 시 또는 active-header 상태일 때 버튼 그룹 노출 */
+th:hover .header-btn-group,
+th.active-header .header-btn-group {
+    opacity: 1;
+}
+
+.mini-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    color: var(--text-dark);
+    font-size: 12px; /* 기존 10px -> 12px로 시인성 상향 조정 */
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+    line-height: 1;
+}
+
+.mini-btn:hover {
+    transform: scale(1.15);
+}
+
+.mini-btn-add:hover {
+    background-color: #107c41 !important; /* 시그니처 엑셀 그린 */
+    color: #ffffff !important;
+    border-color: #107c41 !important;
+}
+
+.mini-btn-delete:hover {
+    background-color: #e11d48 !important; /* 로즈 적색 */
+    color: #ffffff !important;
+    border-color: #e11d48 !important;
 }
 
 /* 5. 스프레드시트 그리드 (테이블) 스타일 */
@@ -170,7 +244,7 @@ body {
     font-size: 0.85rem;
     font-weight: 700; /* 굵은 텍스트 */
     text-align: center; /* 중심 정렬 */
-    height: 38px;
+    height: 48px;
     border: 1px solid var(--border-color);
     user-select: none;
     position: relative; /* 우측 리사이즈 핸들의 절대 좌표 기준점 지정 (피드백 반영) */
@@ -202,19 +276,19 @@ body {
 
 /* 첫 번째 왼쪽 상단 빈 구석 헤더 */
 .corner-header {
-    width: 45px !important;
+    width: 70px !important;
     background-color: #f1f3f5 !important;
 }
 
-/* 행 인덱스 헤더 폭 설정 */
+/* 행 인덱스 헤더 폭 설정 (150% 이상 확장 반영) */
 .spreadsheet-table tbody th {
-    width: 45px;
+    width: 70px;
     background-color: var(--bg-header);
 }
 
 /* 7. 데이터 셀 스타일 (순수 텍스트 표시 상태) */
 .spreadsheet-table td {
-    height: 38px;
+    height: 48px;
     border: 1px solid var(--border-color);
     padding: 0 0.75rem; /* 평소에는 글자 가독성을 위해 상하 0, 좌우 패딩 부여 */
     background-color: transparent;
