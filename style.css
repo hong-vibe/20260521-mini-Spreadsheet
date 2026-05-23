@@ -629,3 +629,97 @@ th.active-header .header-btn-group {
     from { opacity: 0; transform: translate(-50%, -40%); }
     to { opacity: 1; transform: translate(-50%, -50%); }
 }
+
+/* ==========================================================================
+   7. 구글 스프레드시트 테마 맞춤형 프리미엄 푸터 (Footer) 스타일
+   ========================================================================== */
+.app-footer {
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid #e2e8f0;
+    background-color: #f8fafc; /* 은은하고 맑은 Slate-파스텔 그레이 */
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-family: 'Inter', sans-serif;
+}
+
+.footer-top, .footer-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.50rem;
+}
+
+.footer-brand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.footer-logo {
+    font-weight: 700;
+    color: #334155;
+    font-size: 0.85rem;
+    letter-spacing: -0.01em;
+}
+
+.footer-slogan {
+    font-size: 0.70rem;
+    color: #94a3b8; /* 핵심 가치 슬로건은 규정대로 은은하게(희미하게) 투명도 처리 */
+    font-style: italic;
+}
+
+.footer-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.footer-separator {
+    color: #cbd5e1;
+}
+
+.footer-link {
+    color: #0284c7;
+    text-decoration: none;
+    transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.footer-link:hover {
+    color: #0369a1;
+    text-decoration: underline;
+}
+
+.footer-credits {
+    font-weight: 600;
+    color: #475569;
+    letter-spacing: -0.01em;
+}
+
+.footer-copyright {
+    color: #64748b;
+}
+
+.footer-license {
+    font-size: 0.72rem;
+    color: #94a3b8;
+}
+
+.license-item {
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    cursor: help;
+    color: #64748b;
+    transition: color 0.15s ease;
+}
+
+.license-item:hover {
+    color: #334155;
+}
