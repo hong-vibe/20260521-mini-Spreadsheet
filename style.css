@@ -74,6 +74,7 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-shrink: 0; /* 모바일에서 크기가 찌그러지는 현상 방지 */
 }
 
 .logo-icon {
@@ -91,6 +92,14 @@ body {
     display: flex;
     align-items: center;
     gap: 0.85rem;
+    overflow-x: auto; /* 모바일 가로 스크롤 지원 */
+    white-space: nowrap; /* 메뉴 자동 줄바꿈 방지 */
+    -ms-overflow-style: none;  /* IE 및 Edge용 스크롤바 숨김 */
+    scrollbar-width: none;  /* Firefox용 스크롤바 숨김 */
+}
+
+.fake-menubar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari용 스크롤바 숨김 */
 }
 
 .menu-item {
@@ -101,6 +110,7 @@ body {
     border-radius: 4px;
     font-weight: 500;
     transition: background-color 0.15s ease, color 0.15s ease;
+    flex-shrink: 0; /* 모바일에서 찌그러짐 방지 */
 }
 
 .menu-item:hover {
@@ -117,6 +127,14 @@ body {
     border-radius: 24px;       /* 구글시트 느낌의 극도로 부드러운 라운딩 */
     padding: 0.35rem 0.75rem;
     border: 1px solid #e2e8f0;
+    overflow-x: auto; /* 모바일 가로 스크롤 및 스와이프 조작 지원 */
+    white-space: nowrap; /* 버튼 자동 개행 줄바꿈 방지 */
+    -ms-overflow-style: none;  /* IE 및 Edge용 스크롤바 숨김 */
+    scrollbar-width: none;  /* Firefox용 스크롤바 숨김 */
+}
+
+.google-toolbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari용 스크롤바 숨김 */
 }
 
 /* 툴바용 셀 주소 인디케이터 (Name Box) */
@@ -139,6 +157,7 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+    flex-shrink: 0; /* 모바일에서 찌그러짐 방지 */
 }
 
 /* 세로 구분선 */
@@ -147,6 +166,7 @@ body {
     height: 18px;
     background-color: #cbd5e1;
     margin: 0 0.3rem;
+    flex-shrink: 0; /* 모바일에서 찌러짐 방지 */
 }
 
 /* 툴바용 플랫 아이콘 버튼 공통 (아이콘+텍스트 반응형 설계) */
@@ -163,6 +183,7 @@ body {
     color: #475569;
     cursor: pointer;
     transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0; /* 모바일에서 찌러짐 방지 */
 }
 
 .toolbar-btn:hover {
@@ -214,6 +235,7 @@ body {
     cursor: pointer;
     overflow: hidden;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0; /* 모바일에서 찌러짐 방지 */
 }
 
 .toolbar-freetime-btn:hover {
