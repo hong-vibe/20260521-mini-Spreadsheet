@@ -348,3 +348,229 @@ th.active-header .header-btn-group {
     background-color: rgba(2, 132, 199, 0.08) !important;
     font-weight: 500;
 }
+
+/* ==========================================
+   [5단계 - 테라피 휴식 타임 ☕ 매칭 게임 프리미엄 스타일]
+   ========================================== */
+
+/* 게임 전용 뷰포트 오버레이 컨테이너 (고품격 글라스모피즘 스타일) */
+.therapy-overlay {
+    padding: 1.5rem 2rem;
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: 0 0 16px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.3s ease;
+}
+
+/* 디지털 네온 타이머 & 최고 기록 대시보드 */
+.therapy-dashboard {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 550px;
+    background-color: #0f172a; /* 짙은 슬레이트 다크 테마 */
+    padding: 0.85rem 1.5rem;
+    border-radius: 12px;
+    color: #38bdf8; /* 밝은 스카이 블루 */
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 1.25rem;
+    border: 1px solid #1e293b;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
+.timer-value {
+    color: #4ade80; /* 디지털 네온 그린 */
+    text-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+}
+
+.best-value {
+    color: #fbbf24; /* 디폴트 명예 골드 */
+    text-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+}
+
+/* 5x4 격자 전용 게임 보드 */
+.game-board-5x4 {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr); /* 5열 */
+    grid-template-rows: repeat(4, 1fr);    /* 4행 */
+    gap: 12px;
+    width: 100%;
+    max-width: 550px;
+    margin: 0 auto;
+    perspective: 1000px; /* 3D 효과를 위한 부모 컨텍스트 원근감 부여 */
+}
+
+/* 카드 3D 뒤집기 기하학 구조 */
+.game-card {
+    aspect-ratio: 1;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.game-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* 카드 플립 모션 트리거 */
+.game-card.flipped .game-card-inner {
+    transform: rotateY(180deg);
+}
+
+/* 카드 앞뒷면 공통 레이아웃 */
+.game-card-front, .game-card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden; /* 뒷면 회전 시 노출 차단 */
+    -webkit-backface-visibility: hidden;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+/* 카드 앞면 (숨겨진 상태: 고품격 커피 브라운-골드 힐링 테마) */
+.game-card-front {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    color: #f59e0b; /* 차분한 앰버/골드 컬러 */
+    font-size: 1.75rem;
+    border: 2px solid #334155;
+}
+
+.game-card:hover .game-card-inner {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* 카드 뒷면 (공개된 상태: 국기 이모지 노출) */
+.game-card-back {
+    background-color: #f8fafc;
+    transform: rotateY(180deg); /* 180도 미리 반전 배정 */
+    font-size: 2.5rem;
+    border: 2px solid #cbd5e1;
+}
+
+/* 짝 맞추기 정답 처리된 카드 (.matched) */
+.game-card.matched .game-card-inner {
+    animation: matchScale 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.game-card.matched .game-card-back {
+    background-color: #ecfdf5 !important; /* 부드러운 그린 톤 */
+    border-color: #107c41 !important;    /* 엑셀 시그니처 그린 테두리 */
+}
+
+/* 게임 성공 클리어 축하 및 복구 패널 */
+.therapy-success {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    width: 100%;
+    max-width: 550px;
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin: 1.5rem auto;
+    border: 1px solid #e2e8f0;
+    box-shadow: var(--card-shadow);
+    animation: slideUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.success-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: #107c41;
+    margin-bottom: 0.5rem;
+}
+
+.success-stats {
+    font-size: 1rem;
+    color: var(--text-dark);
+    line-height: 1.6;
+    margin: 1rem 0;
+    background-color: #f8fafc;
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    width: 100%;
+}
+
+/* 로컬스토리지 명예의 전당 (기록판) */
+.record-board {
+    width: 100%;
+    background-color: #faf5ff; /* 매우 부드러운 연보라 파스텔 */
+    border: 1px solid #f3e8ff;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-top: 1rem;
+    max-height: 140px;
+    overflow-y: auto;
+    text-align: left;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.record-board-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #7e22ce; /* 보라색 테마 */
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.record-item {
+    font-size: 0.8rem;
+    color: #581c87;
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px dashed #e9d5ff;
+    display: flex;
+    justify-content: space-between;
+}
+
+.record-item:last-child {
+    border-bottom: none;
+}
+
+.record-rank {
+    font-weight: 700;
+    color: #a855f7;
+}
+
+/* 애니메이션 효과 정의 */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes matchScale {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}

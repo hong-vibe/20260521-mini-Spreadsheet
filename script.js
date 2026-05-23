@@ -40,6 +40,17 @@ class SpreadsheetApp {
         this.resizingTh = null;
         this.resizeStartX = 0;
         this.resizeStartWidth = 0;
+
+        // [5단계 - 테라피 휴식 게임 전용 상태 변수들]
+        this.isTherapyMode = false;         // 현재 테라피 휴식 모드 활성화 상태
+        this.therapyTimer = null;           // 1초 단위 타이머 인터벌 객체
+        this.therapyTimeElapsed = 0;        // 게임 진행 소요 시간(초)
+        this.therapyCards = [];             // 셔플된 카드들의 이모지 배치 리스트
+        this.firstFlippedCard = null;       // 매칭 비교용 첫 번째 클릭된 카드 DOM
+        this.secondFlippedCard = null;      // 매칭 비교용 두 번째 클릭된 카드 DOM
+        this.lockTherapyBoard = false;      // 0.8초 딜레이 또는 비교 연산 중 클릭 오작동 방지 락
+        this.matchedCount = 0;              // 현재 성공적으로 짝이 맞춰진 세트 개수 (최대 10개)
+        this.sheetBackup = null;            // 게임 진입 전 시트 데이터 및 크기 대피 백업 컨테이너
         
         // [DOM 엘리먼트 캐싱] 자주 접근하는 화면 요소들을 캐시하여 성능을 극대화합니다.
         this.table = document.querySelector('.spreadsheet-table');
@@ -125,6 +136,12 @@ class SpreadsheetApp {
 
         // J. 엑셀 내보내기 버튼 클릭 이벤트
         this.exportButton.addEventListener('click', () => this.exportToExcel());
+
+        // K. [5단계] 테라피 휴식 게임 버튼 클릭 이벤트
+        const therapyBtn = document.getElementById('therapy-btn');
+        if (therapyBtn) {
+            therapyBtn.addEventListener('click', () => this.toggleTherapyMode());
+        }
     }
 
     /* ==========================================
@@ -323,6 +340,7 @@ class SpreadsheetApp {
      * 셀 마우스 다운 핸들러: 드래그 범위 선택의 시발점이며, Shift+클릭 조건도 처리합니다.
      */
     handleCellMouseDown(e) {
+        if (this.isTherapyMode) return;
         // 이미 해당 셀을 에딧 중인 상태라면 마우스 클릭 동작 무시
         if (this.isEditing && this.currentSelection && this.currentSelection.element === e.currentTarget) {
             return;
@@ -355,6 +373,7 @@ class SpreadsheetApp {
      * 셀 마우스 엔터 핸들러: 드래그 활성화 중일 때, 마우스 궤적에 따른 영역을 하이라이트합니다.
      */
     handleCellMouseEnter(e) {
+        if (this.isTherapyMode) return;
         if (!this.isDragging) return;
 
         const td = e.currentTarget;
@@ -488,6 +507,7 @@ class SpreadsheetApp {
      * 셀 더블 클릭 핸들러: 즉시 수정 모드로 진입합니다.
      */
     handleCellDblClick(e) {
+        if (this.isTherapyMode) return;
         const td = e.currentTarget;
         this.enterEditMode(td);
     }
@@ -660,6 +680,7 @@ class SpreadsheetApp {
      * 선택 대기 상태에서의 방향키 이동 및 타이핑 시작 시 덮어쓰기 진입 처리
      */
     handleDocumentKeyDown(e) {
+        if (this.isTherapyMode) return;
         // [3단계] Ctrl + Z 단축키 감지 시 실행 취소(Undo) 실행 (단, 편집 중이 아닐 때)
         if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
             e.preventDefault();
@@ -1048,6 +1069,7 @@ class SpreadsheetApp {
      * 선택된 영역 구조(단일 셀, 전체 행, 전체 열, 전체 시트)에 어울리는 정밀한 TSV 텍스트를 만들어 클립보드에 주입합니다.
      */
     handleClipboardCopy(e) {
+        if (this.isTherapyMode) return;
         // 복사 타겟 정보가 아예 없다면 중단합니다.
         if (!this.currentSelection) return;
 
@@ -1145,6 +1167,7 @@ class SpreadsheetApp {
      * 외부 스프레드시트(구글 시트, 엑셀)에서 복사해 온 TSV 구조를 파싱해 활성 셀 원점(0,0)을 기준으로 2차원 분할 착지시킵니다.
      */
     handleClipboardPaste(e) {
+        if (this.isTherapyMode) return;
         // 현재 활성화된 포커스 셀이 없거나 단일 셀이 아니라면 붙여넣기를 수행할 원점이 모호하므로 중단합니다.
         if (!this.currentSelection || this.currentSelection.type !== 'cell') return;
 
@@ -1755,6 +1778,457 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         this.saveToLocalStorage();
 
         console.log(`열 삭제 완료. 대상 인덱스: ${targetColIdx}, 전체 열수: ${this.maxCols}`);
+    }
+
+    /* ==========================================
+       [5단계 - 테라피 휴식 ☕ 매칭 게임 독립 라이프사이클 엔진]
+       ========================================== */
+
+    /**
+     * [5단계] 테라피 휴식 게임 모드의 온/오프 상태를 제어하는 토글러입니다.
+     */
+    toggleTherapyMode() {
+        if (this.isEditing && this.currentSelection && this.currentSelection.element) {
+            this.exitEditMode(this.currentSelection.element, true);
+        }
+
+        if (this.isTherapyMode) {
+            this.stopTherapyMode();
+        } else {
+            this.startTherapyMode();
+        }
+    }
+
+    /**
+     * [5단계] 테라피 휴식 모드 개시: 스프레드시트를 대피시키고 게임 보드를 빌드합니다.
+     */
+    startTherapyMode() {
+        this.isTherapyMode = true;
+
+        // 1. 기존 선택 및 에딧 상태 정리
+        this.clearAllCellSelections();
+        this.clearSelectedCellClass();
+        this.clearAllHeaderHighlights();
+
+        // 2. 기존 데이터 및 크기 레이아웃 완전 메모리 대피 백업
+        this.sheetBackup = {
+            data: JSON.parse(JSON.stringify(this.spreadsheetData)),
+            rows: this.maxRows,
+            cols: this.maxCols
+        };
+
+        // 3. 스프레드시트 컨테이너 숨김 처리
+        const gridContainer = document.querySelector('.grid-container');
+        if (gridContainer) {
+            gridContainer.style.display = 'none';
+        }
+
+        // 4. 기존 액션 버튼들 visually disable 처리
+        this.exportButton.style.opacity = '0.5';
+        this.exportButton.style.pointerEvents = 'none';
+        const sampleBtn = document.getElementById('sample-btn');
+        if (sampleBtn) {
+            sampleBtn.style.opacity = '0.5';
+            sampleBtn.style.pointerEvents = 'none';
+        }
+        const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) {
+            undoBtn.style.opacity = '0.5';
+            undoBtn.style.pointerEvents = 'none';
+        }
+        const resetBtn = document.getElementById('reset-btn');
+        if (resetBtn) {
+            resetBtn.style.opacity = '0.5';
+            resetBtn.style.pointerEvents = 'none';
+        }
+
+        // 5. '테라피 휴식' 버튼 텍스트 변경으로 온/오프 상태 표현
+        const therapyBtn = document.getElementById('therapy-btn');
+        if (therapyBtn) {
+            therapyBtn.textContent = '시트로 복귀 🏓';
+            therapyBtn.className = 'btn btn-primary'; // 강조
+        }
+
+        // 6. 게임 전용 보드 오버레이 동적 삽입
+        const appContainer = document.querySelector('.app-container');
+        const overlay = document.createElement('div');
+        overlay.className = 'therapy-overlay';
+        overlay.id = 'therapy-overlay';
+
+        // 디지털 타이머 및 최고 기록 명판 대시보드
+        const bestRecordStr = this.getBestRecord() || '없음';
+        overlay.innerHTML = `
+            <div class="therapy-dashboard">
+                <div>☕ THERAPY TIME - CARD MATCHING</div>
+                <div>
+                    최고 기록: <span class="best-value">${bestRecordStr}</span> | 
+                    시간: <span class="timer-value" id="therapy-timer-val">00:00</span>
+                </div>
+            </div>
+            <div class="game-board-5x4" id="game-board"></div>
+        `;
+
+        appContainer.appendChild(overlay);
+
+        // 7. 게임 상태 초기화 및 카드 기하학 렌더링
+        this.initTherapyGame();
+    }
+
+    /**
+     * [5단계] 테라피 휴식 모드 철수: 게임 보드를 걷어내고 원래 스프레드시트 세션을 백업 복구합니다.
+     */
+    stopTherapyMode() {
+        this.isTherapyMode = false;
+
+        // 1. 타이머 인스턴스 소멸
+        if (this.therapyTimer) {
+            clearInterval(this.therapyTimer);
+            this.therapyTimer = null;
+        }
+
+        // 2. 게임 전용 오버레이 DOM 영구 삭제
+        const overlay = document.getElementById('therapy-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+
+        // 3. 스프레드시트 컨테이너 복원 노출
+        const gridContainer = document.querySelector('.grid-container');
+        if (gridContainer) {
+            gridContainer.style.display = 'block';
+        }
+
+        // 4. 버튼들 활성화 원상복귀
+        this.exportButton.style.opacity = '1';
+        this.exportButton.style.pointerEvents = 'auto';
+        const sampleBtn = document.getElementById('sample-btn');
+        if (sampleBtn) {
+            sampleBtn.style.opacity = '1';
+            sampleBtn.style.pointerEvents = 'auto';
+        }
+        const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) {
+            undoBtn.style.opacity = '1';
+            undoBtn.style.pointerEvents = 'auto';
+        }
+        const resetBtn = document.getElementById('reset-btn');
+        if (resetBtn) {
+            resetBtn.style.opacity = '1';
+            resetBtn.style.pointerEvents = 'auto';
+        }
+
+        // 5. '테라피 휴식' 버튼 복구
+        const therapyBtn = document.getElementById('therapy-btn');
+        if (therapyBtn) {
+            therapyBtn.textContent = '테라피 휴식 ☕';
+            therapyBtn.className = 'btn btn-secondary';
+        }
+
+        // 6. 데이터 백업 원상 복구 및 DOM 재생성 그리드 리바인딩
+        if (this.sheetBackup) {
+            this.spreadsheetData = this.sheetBackup.data;
+            this.maxRows = this.sheetBackup.rows;
+            this.maxCols = this.sheetBackup.cols;
+        }
+        this.rebuildGrid();
+
+        // 7. 인디케이터 초기화
+        this.setIndicatorText("Cell: 선택 안 됨");
+    }
+
+    /**
+     * [5단계] 셔플링 및 20개 카드의 기하학적 렌더링 세팅 모듈
+     */
+    initTherapyGame() {
+        const gameBoard = document.getElementById('game-board');
+        if (!gameBoard) return;
+
+        // 상태 청소
+        this.therapyTimeElapsed = 0;
+        this.firstFlippedCard = null;
+        this.secondFlippedCard = null;
+        this.lockTherapyBoard = false;
+        this.matchedCount = 0;
+
+        // 미국, 일본, 이스라엘 국기가 엄격히 배제된 친화 평화 10개국 리스트
+        const baseFlags = ['🇰🇷', '🇫🇷', '🇩🇪', '🇬🇧', '🇨🇦', '🇧🇷', '🇮🇹', '🇪🇸', '🇦🇺', '🇨🇭'];
+        
+        // 2쌍씩 20개 매핑
+        this.therapyCards = [...baseFlags, ...baseFlags];
+
+        // Fisher-Yates 무작위 셔플링 알고리즘
+        for (let i = this.therapyCards.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.therapyCards[i], this.therapyCards[j]] = [this.therapyCards[j], this.therapyCards[i]];
+        }
+
+        // DOM 카드 요소 20개 생성 및 보드 적재
+        gameBoard.innerHTML = '';
+        this.therapyCards.forEach((flag, idx) => {
+            const card = document.createElement('div');
+            card.className = 'game-card';
+            card.setAttribute('data-index', idx);
+            card.setAttribute('data-flag', flag);
+
+            card.innerHTML = `
+                <div class="game-card-inner">
+                    <div class="game-card-front">☕</div>
+                    <div class="game-card-back">${flag}</div>
+                </div>
+            `;
+
+            card.addEventListener('click', () => this.handleCardClick(card));
+            gameBoard.appendChild(card);
+        });
+    }
+
+    /**
+     * [5단계] 카드 클릭 핸들러: 플립 모션 작동 및 2-Card 짝 맞추기 평가
+     */
+    handleCardClick(cardEl) {
+        // 보드 잠금 상태이거나, 이미 뒤집혔거나, 이미 짝이 맞춰진 카드 조작 배제
+        if (this.lockTherapyBoard || cardEl.classList.contains('flipped') || cardEl.classList.contains('matched')) {
+            return;
+        }
+
+        // 카드 뒤집기 애니메이션 트리거
+        cardEl.classList.add('flipped');
+
+        // 타이머 루프가 개시되지 않은 첫 카드 조작인 경우 타이머 가동
+        if (!this.therapyTimer) {
+            this.startTherapyTimer();
+        }
+
+        if (!this.firstFlippedCard) {
+            // A. 첫 번째 카드 클릭 박제
+            this.firstFlippedCard = cardEl;
+        } else {
+            // B. 두 번째 카드 클릭 박제 및 평가 연산 돌입
+            this.secondFlippedCard = cardEl;
+            this.lockTherapyBoard = true; // 평가 중 광클 차단
+
+            const firstFlag = this.firstFlippedCard.getAttribute('data-flag');
+            const secondFlag = this.secondFlippedCard.getAttribute('data-flag');
+
+            if (firstFlag === secondFlag) {
+                // 짝이 맞은 정답 판정 (.matched)
+                this.firstFlippedCard.classList.add('matched');
+                this.secondFlippedCard.classList.add('matched');
+
+                this.matchedCount++;
+                
+                // 성공 판정 메모리 비우기
+                this.firstFlippedCard = null;
+                this.secondFlippedCard = null;
+                this.lockTherapyBoard = false;
+
+                // 10쌍 올 클리어 도달 시 성공 모듈 구동
+                if (this.matchedCount === 10) {
+                    this.handleTherapyGameClear();
+                }
+            } else {
+                // 불일치 시 0.8초 동안 국기를 품은 모습을 눈에 익힌 뒤 원상 플립 복원
+                setTimeout(() => {
+                    this.firstFlippedCard.classList.remove('flipped');
+                    this.secondFlippedCard.classList.remove('flipped');
+
+                    // 메모리 복원 및 락 해제
+                    this.firstFlippedCard = null;
+                    this.secondFlippedCard = null;
+                    this.lockTherapyBoard = false;
+                }, 800);
+            }
+        }
+    }
+
+    /**
+     * [5단계] 1초 간격의 힐링 경과 타이머 작동 개시
+     */
+    startTherapyTimer() {
+        this.therapyTimeElapsed = 0;
+        this.therapyTimer = setInterval(() => {
+            this.therapyTimeElapsed++;
+            this.updateTherapyTimerDisplay();
+        }, 1000);
+    }
+
+    /**
+     * [5단계] 대시보드 경과 시간 00:00 분:초 단위 디스플레이 포맷팅
+     */
+    updateTherapyTimerDisplay() {
+        const timerVal = document.getElementById('therapy-timer-val');
+        if (!timerVal) return;
+
+        const mins = Math.floor(this.therapyTimeElapsed / 60);
+        const secs = this.therapyTimeElapsed % 60;
+        timerVal.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    /**
+     * [5단계] 게임 올 클리어 연출 및 로컬스토리지 완료 레코드 영구 마킹
+     */
+    handleTherapyGameClear() {
+        // 1. 타이머 멈춤
+        if (this.therapyTimer) {
+            clearInterval(this.therapyTimer);
+        }
+
+        // 2. 완료 일자, 시각 및 소요시간 획득
+        const now = new Date();
+        
+        // YYYY-MM-DD
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        // HH:MM (시:분만 표시 반영!)
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const timeStr = `${hours}:${minutes}`;
+
+        // 소요시간 예쁘게 변환 (초 및 분초)
+        let elapsedText = '';
+        if (this.therapyTimeElapsed < 60) {
+            elapsedText = `${this.therapyTimeElapsed}초`;
+        } else {
+            const m = Math.floor(this.therapyTimeElapsed / 60);
+            const s = this.therapyTimeElapsed % 60;
+            elapsedText = `${m}분 ${s}초`;
+        }
+
+        // 3. 로컬기록판 세션 적재
+        this.saveTherapyRecord(dateStr, timeStr, elapsedText, this.therapyTimeElapsed);
+
+        // 4. 게임 보드를 소멸시키고 영광의 성공 보고 패널 동적 노출
+        const overlay = document.getElementById('therapy-overlay');
+        if (overlay) {
+            // 기존 5x4 보드 제거
+            const gameBoard = document.getElementById('game-board');
+            if (gameBoard) gameBoard.remove();
+
+            // 성공 축하 템플릿 삽입
+            const successDiv = document.createElement('div');
+            successDiv.className = 'therapy-success';
+            successDiv.innerHTML = `
+                <div class="success-title">🎉 두뇌 리프레싱 성공! 🎉</div>
+                <p style="color: #64748b; font-size: 0.9rem;">10쌍의 평화 국기 카드를 모두 매칭 완료하여 뇌에 산소를 공급했습니다.</p>
+                
+                <div class="success-stats">
+                    <strong>완료 일시:</strong> ${dateStr} ${timeStr}<br>
+                    <strong>소요 시간:</strong> <span style="color: #107c41; font-weight:700;">${elapsedText}</span>
+                </div>
+
+                <button id="therapy-close-btn" class="btn btn-primary" style="padding: 0.6rem 2rem; font-size:1rem; height:42px;">시트로 돌아가기 🏓</button>
+                
+                <div class="record-board" id="record-board-container"></div>
+            `;
+
+            overlay.appendChild(successDiv);
+
+            // 명예의 전당 보드판 렌더링
+            this.renderRecordBoard();
+
+            // 시트로 돌아가기 이벤트 바인딩
+            const closeBtn = document.getElementById('therapy-close-btn');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => this.toggleTherapyMode());
+            }
+        }
+    }
+
+    /**
+     * [5단계] 클리어한 타임 레코드를 로컬스토리지에 리스트화하여 누적 저장합니다.
+     */
+    saveTherapyRecord(date, time, elapsedStr, seconds) {
+        try {
+            const rawRecords = localStorage.getItem('pingpong_therapy_records');
+            let records = [];
+            if (rawRecords) {
+                records = JSON.parse(rawRecords);
+            }
+
+            // 새 레코드 삽입
+            records.push({
+                date: date,
+                time: time,
+                elapsed: elapsedStr,
+                seconds: seconds
+            });
+
+            // 소요 시간(초)이 적은 순으로 정렬하여 탑 랭킹 형성
+            records.sort((a, b) => a.seconds - b.seconds);
+
+            // 최대 10개 기록만 보존 관리
+            if (records.length > 10) {
+                records = records.slice(0, 10);
+            }
+
+            localStorage.setItem('pingpong_therapy_records', JSON.stringify(records));
+        } catch (e) {
+            console.error("기록 저장 중 로컬스토리지 장애:", e);
+        }
+    }
+
+    /**
+     * [5단계] 역대 1위 최고 기록(Best Record) 스트링 획득
+     */
+    getBestRecord() {
+        try {
+            const rawRecords = localStorage.getItem('pingpong_therapy_records');
+            if (rawRecords) {
+                const records = JSON.parse(rawRecords);
+                if (records.length > 0) {
+                    return records[0].elapsed; // 최단 시간 소요값 반환
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    /**
+     * [5단계] 명예의 전당 기록 리스트를 이쁘게 렌더링합니다.
+     */
+    renderRecordBoard() {
+        const container = document.getElementById('record-board-container');
+        if (!container) return;
+
+        try {
+            const rawRecords = localStorage.getItem('pingpong_therapy_records');
+            let records = [];
+            if (rawRecords) {
+                records = JSON.parse(rawRecords);
+            }
+
+            if (records.length === 0) {
+                container.innerHTML = `<div style="text-align:center; color:#a855f7; font-size:0.8rem;">아직 수립된 기록이 없습니다.</div>`;
+                return;
+            }
+
+            let html = `
+                <div class="record-board-title">
+                    🏆 명예의 전당 (Top 5 Best Times)
+                </div>
+            `;
+
+            // 최대 5개 기록 노출
+            records.slice(0, 5).forEach((rec, idx) => {
+                const rankIcon = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}위`;
+                html += `
+                    <div class="record-item">
+                        <span>
+                            <span class="record-rank">${rankIcon}</span> 
+                            (${rec.date} ${rec.time})
+                        </span>
+                        <strong style="color: #7e22ce;">${rec.elapsed}</strong>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<div style="color:red;">기록판 파싱 중 장애가 발생했습니다.</div>`;
+        }
     }
 }
 
