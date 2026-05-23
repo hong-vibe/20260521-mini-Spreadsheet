@@ -16,6 +16,9 @@ class SpreadsheetApp {
         // [데이터 상태 관리] 사용자가 입력한 셀 좌표와 값을 매핑하는 단일 플랫 객체
         this.spreadsheetData = {};
 
+        // [실행 취소(Undo) 상태 관리] 이전의 데이터 모델 상태를 깊은 복사하여 순차적으로 쌓는 히스토리 스택
+        this.undoStack = [];
+
         // [복사/선택 범위 상태 관리] 현재 포커스된 단일 셀이나 드래그/선택된 범위 구조를 실시간 추적합니다.
         // 형태: null 또는 { type: 'cell'|'row'|'col'|'all'|'range', col: 'A', row: 1, cell: 'A1', element: tdElement, startCol, startRow, endCol, endRow }
         this.currentSelection = null;
@@ -103,7 +106,13 @@ class SpreadsheetApp {
         document.addEventListener('copy', (e) => this.handleClipboardCopy(e));
         document.addEventListener('paste', (e) => this.handleClipboardPaste(e));
 
-        // H. 엑셀 내보내기 버튼 클릭 이벤트
+        // H. 실행 취소(Undo) 버튼 클릭 이벤트 바인딩
+        const undoBtn = document.getElementById('undo-btn');
+        if (undoBtn) {
+            undoBtn.addEventListener('click', () => this.undo());
+        }
+
+        // I. 엑셀 내보내기 버튼 클릭 이벤트
         this.exportButton.addEventListener('click', () => this.exportToExcel());
     }
 
@@ -127,6 +136,66 @@ class SpreadsheetApp {
         delete this.spreadsheetData[cellCoord];
         console.log('데이터 키 삭제 완료:', this.spreadsheetData);
         this.saveToLocalStorage(); // [2단계] 상태 모델 변경 시 실시간 자동 저장 트리거
+    }
+
+    /* ==========================================
+       [3단계 - 실행 취소(Undo) 엔진 모듈]
+       ========================================== */
+
+    /**
+     * [3단계] 현재 spreadsheetData의 데이터 상태를 깊은 복사하여 Undo 스택에 저장합니다.
+     * 메모리 누수를 방지하기 위해 최대 스택 크기를 50개로 제한합니다.
+     */
+    saveStateToUndoStack() {
+        const snapshot = JSON.parse(JSON.stringify(this.spreadsheetData));
+        this.undoStack.push(snapshot);
+
+        // 최대 스택 크기를 50개로 제한하여 메모리 과부하 방지
+        if (this.undoStack.length > 50) {
+            this.undoStack.shift();
+        }
+        console.log('실행 취소(Undo) 스택 저장 완료. 현재 크기:', this.undoStack.length);
+    }
+
+    /**
+     * [3단계] 가장 최근에 저장했던 상태로 롤백하고 화면과 로컬스토리지를 강제 동기화합니다.
+     */
+    undo() {
+        // 편집 중인 상태라면 편집을 롤백(저장 안 함)하고 안전하게 이탈시킵니다.
+        if (this.isEditing && this.currentSelection && this.currentSelection.element) {
+            this.exitEditMode(this.currentSelection.element, false);
+        }
+
+        if (this.undoStack.length === 0) {
+            console.log('되돌릴 이전 이력이 존재하지 않습니다.');
+            return;
+        }
+
+        // 스택에서 가장 최근의 상태 복원
+        const prevState = this.undoStack.pop();
+        this.spreadsheetData = prevState;
+
+        // 화면 그리드 일제히 청소
+        this.cells.forEach(cell => {
+            cell.textContent = '';
+        });
+
+        // 복구된 데이터 모델로 화면 그리드 재렌더링
+        this.renderAllData();
+
+        // 로컬스토리지 오토세이브 즉시 덮어쓰기 동기화
+        this.saveToLocalStorage();
+
+        // 선택된 단일 셀이 있다면 헤더 하이라이트 동기화
+        if (this.currentSelection && this.currentSelection.type === 'cell') {
+            const col = this.currentSelection.col;
+            const row = this.currentSelection.row;
+            this.highlightCellHeaders(col, row);
+        } else {
+            this.clearAllHeaderHighlights();
+        }
+
+        console.log('실행 취소(Undo) 완료. 남은 스택 크기:', this.undoStack.length);
     }
 
     /* ==========================================
@@ -530,6 +599,12 @@ class SpreadsheetApp {
         let finalValue = input.value.trim();
 
         if (shouldSave) {
+            const originalVal = this.spreadsheetData[cellCoord] || '';
+            // [3단계] 실제로 값이 변경되었을 때만 실행 취소 스택에 사전 백업 저장
+            if (finalValue !== originalVal) {
+                this.saveStateToUndoStack();
+            }
+
             if (finalValue !== '') {
                 // 데이터 갱신 및 화면 주입
                 this.updateCellValue(cellCoord, finalValue);
@@ -561,6 +636,13 @@ class SpreadsheetApp {
      * 선택 대기 상태에서의 방향키 이동 및 타이핑 시작 시 덮어쓰기 진입 처리
      */
     handleDocumentKeyDown(e) {
+        // [3단계] Ctrl + Z 단축키 감지 시 실행 취소(Undo) 실행 (단, 편집 중이 아닐 때)
+        if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
+            e.preventDefault();
+            this.undo();
+            return;
+        }
+
         // 만약 셀을 편집(에딧)하고 있는 도중에는 전역 방향키 리스너 작동을 배제합니다.
         if (this.isEditing) return;
 
@@ -644,6 +726,57 @@ class SpreadsheetApp {
         if (!this.currentSelection) return;
 
         const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+
+        // [3단계] 지울 데이터가 실제로 존재하는지 사전 검사
+        let hasDataToDelete = false;
+        switch (this.currentSelection.type) {
+            case 'cell':
+                if (this.spreadsheetData[this.currentSelection.cell]) hasDataToDelete = true;
+                break;
+            case 'range':
+                const sColIdx = cols.indexOf(this.currentSelection.startCol);
+                const eColIdx = cols.indexOf(this.currentSelection.endCol);
+                const minColIdx = Math.min(sColIdx, eColIdx);
+                const maxColIdx = Math.max(sColIdx, eColIdx);
+                const minRow = Math.min(this.currentSelection.startRow, this.currentSelection.endRow);
+                const maxRow = Math.max(this.currentSelection.startRow, this.currentSelection.endRow);
+                for (let r = minRow; r <= maxRow; r++) {
+                    for (let cIdx = minColIdx; cIdx <= maxColIdx; cIdx++) {
+                        if (this.spreadsheetData[`${cols[cIdx]}${r}`]) {
+                            hasDataToDelete = true;
+                            break;
+                        }
+                    }
+                    if (hasDataToDelete) break;
+                }
+                break;
+            case 'col':
+                const colLetter = this.currentSelection.col;
+                for (let r = 1; r <= 9; r++) {
+                    if (this.spreadsheetData[`${colLetter}${r}`]) {
+                        hasDataToDelete = true;
+                        break;
+                    }
+                }
+                break;
+            case 'row':
+                const rowNum = this.currentSelection.row;
+                for (let cIdx = 0; cIdx < cols.length; cIdx++) {
+                    if (this.spreadsheetData[`${cols[cIdx]}${rowNum}`]) {
+                        hasDataToDelete = true;
+                        break;
+                    }
+                }
+                break;
+            case 'all':
+                if (Object.keys(this.spreadsheetData).length > 0) hasDataToDelete = true;
+                break;
+        }
+
+        // 지울 데이터가 존재할 때만 실행 취소 스택에 추가
+        if (hasDataToDelete) {
+            this.saveStateToUndoStack();
+        }
 
         switch (this.currentSelection.type) {
             case 'cell':
@@ -1002,7 +1135,12 @@ class SpreadsheetApp {
     /**
      * [피드백 반영] 탭(TSV)으로 구분된 데이터를 좌표에 맞춰 2차원 해독 렌더링하고 상태 모델에 기입하는 핵심 공통 모듈입니다.
      */
-    importTSVData(tsvText, startCol, startRow) {
+    importTSVData(tsvText, startCol, startRow, skipUndo = false) {
+        // [3단계] 스킵 플래그가 꺼져 있을 때만(예: Ctrl+V 붙여넣기 등) 실행 취소 백업 진행
+        if (!skipUndo) {
+            this.saveStateToUndoStack();
+        }
+
         const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
         const startColIndex = cols.indexOf(startCol);
 
@@ -1069,6 +1207,9 @@ class SpreadsheetApp {
         const proceed = confirm("목업 데이터가 시트에 입력되고 현재 데이터는 지워집니다. 입력할까요?");
         if (!proceed) return;
 
+        // [3단계] 싹 비워지기 전, 기존 데이터를 안전하게 되돌리기 위해 미리 백업 저장
+        this.saveStateToUndoStack();
+
         // 기존 모든 시트 데이터를 완벽히 제거 (완전한 오버라이트 주입 사양 충족)
         this.clearAllSheetData();
 
@@ -1082,7 +1223,8 @@ iPad Pro 11\tM2 256G\t5\t1240000\t6200000\t출고완료\t태블릿\t강태호\t�
 Galaxy Tab S9\tUltra\t4\t1370000\t5480000\t입고대기\t태블릿\t윤서연\t모바일개발팀
 Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지민\t클라우드 구독`;
 
-        this.importTSVData(mockupTSV, 'A', 1);
+        // 4번째 인자(skipUndo)로 true를 전달하여 중복 백업을 건너뜁니다.
+        this.importTSVData(mockupTSV, 'A', 1, true);
         
         // 데이터 주입 완료 후 A1 셀을 디폴트 선택 상태로 활성화
         const firstCell = document.querySelector('.spreadsheet-cell[data-cell="A1"]');
