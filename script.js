@@ -1,12 +1,14 @@
 /**
  * 객체지향(OOP) 기반 미니 스프레드시트 애플리케이션 (script.js)
  * 
- * [고도화 업데이트 완료]
- * 1. 전체 선택 모듈: 좌측 상단 모서리(.corner-header) 클릭 시 9x9 전체 영역 일괄 활성화.
- * 2. 양방향 클립보드 연동 (Ctrl+C): 단일 셀, 전체 행, 전체 열, 전체 시트 범위에 따라 정밀 TSV 텍스트 클립보드 생성.
- * 3. 2차원 다중 셀 붙여넣기 (Ctrl+V): 외부 복사 텍스트(탭/개행 구분)를 해독하여 포커스 기준 좌표로 2차원 착지 정렬 기입 및 상태 동기화.
- * 4. 입문자 친화성: 바이브코딩 초심자도 각 기능의 흐름을 쉽게 이해하도록 모든 핵심 코드 라인에 한글 설명 제공.
+ * [ES6 Modules 아키텍처 리팩토링 완료]
+ * - SpreadsheetUtils.js : 엑셀 변환, TSV 클립보드 파서, 열-숫자 인덱스 변환기 독립
+ * - GameEngine.js : 5단계 스텔스 위장 게임의 타이머, Fisher-Yates 카드 셔플러, 점수 판정 격리
+ * - script.js (본 파일) : 화면 그리기(DOM 렌더링)와 마우스/키보드 감지(이벤트 연결) 메인 컨트롤러 역할 전담
  */
+
+import { SpreadsheetUtils } from './SpreadsheetUtils.js';
+import { StealthGameEngine } from './GameEngine.js';
 
 class SpreadsheetApp {
     /**
@@ -41,15 +43,12 @@ class SpreadsheetApp {
         this.resizeStartX = 0;
         this.resizeStartWidth = 0;
 
-        // [5단계 - 테라피 휴식 게임 전용 상태 변수들]
+        // [5단계 - 테라피 휴식 게임 전용 상태 변수들 및 부품 엔진]
         this.isTherapyMode = false;         // 현재 테라피 휴식 모드 활성화 상태
-        this.therapyTimer = null;           // 1초 단위 타이머 인터벌 객체
-        this.therapyTimeElapsed = 0;        // 게임 진행 소요 시간(초)
-        this.therapyCards = [];             // 셔플된 카드들의 이모지 배치 리스트
+        this.gameEngine = null;             // StealthGameEngine 인스턴스 (게임 진입 시 동적 생성)
         this.firstFlippedCard = null;       // 매칭 비교용 첫 번째 클릭된 카드 DOM
         this.secondFlippedCard = null;      // 매칭 비교용 두 번째 클릭된 카드 DOM
-        this.lockTherapyBoard = false;      // 0.8초 딜레이 또는 비교 연산 중 클릭 오작동 방지 락
-        this.matchedCount = 0;              // 현재 성공적으로 짝이 맞춰진 세트 개수 (최대 10개)
+        this.lockTherapyBoard = false;      // 0.4초 딜레이 또는 비교 연산 중 클릭 오작동 방지 락
         this.sheetBackup = null;            // 게임 진입 전 시트 데이터 및 크기 대피 백업 컨테이너
         
         // [DOM 엘리먼트 캐싱] 자주 접근하는 화면 요소들을 캐시하여 성능을 극대화합니다.
@@ -78,13 +77,8 @@ class SpreadsheetApp {
     bindEvents() {
         // A. 개별 셀(td)들에 대한 이벤트 연결
         this.cells.forEach(cell => {
-            // 1. 셀 마우스 다운 (단일 클릭 선택 대기 & 드래그 시작 & Shift 클릭 분기)
             cell.addEventListener('mousedown', (e) => this.handleCellMouseDown(e));
-            
-            // 2. 셀 마우스 엔터 (드래그 동작 중 범위 업데이트)
             cell.addEventListener('mouseenter', (e) => this.handleCellMouseEnter(e));
-            
-            // 3. 셀 더블 클릭 (즉시 수정 모드로 전환)
             cell.addEventListener('dblclick', (e) => this.handleCellDblClick(e));
         });
 
@@ -106,13 +100,13 @@ class SpreadsheetApp {
             th.addEventListener('click', (e) => this.handleRowHeaderClick(e));
         });
 
-        // E. 좌측 상단 모서리(.corner-header) 클릭 시 9x9 전체 선택 처리 바인딩
+        // E. 좌측 상단 모서리(.corner-header) 클릭 시 전체 선택 처리 바인딩
         const cornerHeader = document.querySelector('.corner-header');
         if (cornerHeader) {
             cornerHeader.addEventListener('click', () => this.handleCornerHeaderClick());
         }
 
-        // F. 원클릭 목업 주입 Sample 버튼 이벤트 바인딩 (피드백 반영)
+        // F. 원클릭 목업 주입 Sample 버튼 이벤트 바인딩
         const sampleBtn = document.getElementById('sample-btn');
         if (sampleBtn) {
             sampleBtn.addEventListener('click', () => this.injectSampleMockupData());
@@ -171,14 +165,17 @@ class SpreadsheetApp {
        ========================================== */
 
     /**
-     * [3단계] 현재 spreadsheetData의 데이터 상태를 깊은 복사하여 Undo 스택에 저장합니다.
+     * 현재 spreadsheetData의 데이터 상태를 깊은 복사하여 Undo 스택에 저장합니다.
      * 메모리 누수를 방지하기 위해 최대 스택 크기를 50개로 제한합니다.
      */
     saveStateToUndoStack() {
-        const snapshot = JSON.parse(JSON.stringify(this.spreadsheetData));
+        const snapshot = {
+            data: JSON.parse(JSON.stringify(this.spreadsheetData)),
+            maxRows: this.maxRows,
+            maxCols: this.maxCols
+        };
         this.undoStack.push(snapshot);
 
-        // 최대 스택 크기를 50개로 제한하여 메모리 과부하 방지
         if (this.undoStack.length > 50) {
             this.undoStack.shift();
         }
@@ -186,10 +183,9 @@ class SpreadsheetApp {
     }
 
     /**
-     * [3단계] 가장 최근에 저장했던 상태로 롤백하고 화면과 로컬스토리지를 강제 동기화합니다.
+     * 가장 최근에 저장했던 상태로 롤백하고 화면과 로컬스토리지를 강제 동기화합니다.
      */
     undo() {
-        // 편집 중인 상태라면 편집을 롤백(저장 안 함)하고 안전하게 이탈시킵니다.
         if (this.isEditing && this.currentSelection && this.currentSelection.element) {
             this.exitEditMode(this.currentSelection.element, false);
         }
@@ -199,29 +195,19 @@ class SpreadsheetApp {
             return;
         }
 
-        // 스택에서 가장 최근의 상태 복원
         const prevState = this.undoStack.pop();
-        this.spreadsheetData = prevState;
+        this.spreadsheetData = prevState.data;
+        this.maxRows = prevState.maxRows;
+        this.maxCols = prevState.maxCols;
 
-        // 화면 그리드 일제히 청소
-        this.cells.forEach(cell => {
-            cell.textContent = '';
-        });
+        // 과거 크기에 맞춰 화면 그리드 DOM 전면 리빌드 및 데이터 자동 주입
+        this.rebuildGrid();
 
-        // 복구된 데이터 모델로 화면 그리드 재렌더링
-        this.renderAllData();
-
-        // 로컬스토리지 오토세이브 즉시 덮어쓰기 동기화
         this.saveToLocalStorage();
 
-        // 선택된 단일 셀이 있다면 헤더 하이라이트 동기화
-        if (this.currentSelection && this.currentSelection.type === 'cell') {
-            const col = this.currentSelection.col;
-            const row = this.currentSelection.row;
-            this.highlightCellHeaders(col, row);
-        } else {
-            this.clearAllHeaderHighlights();
-        }
+        this.currentSelection = null;
+        this.setIndicatorText("Cell: 선택 안 됨");
+        this.clearAllHeaderHighlights();
 
         console.log('실행 취소(Undo) 완료. 남은 스택 크기:', this.undoStack.length);
     }
@@ -231,7 +217,7 @@ class SpreadsheetApp {
        ========================================== */
 
     /**
-     * [2단계] 현재의 전역 스프레드시트 데이터 상태 및 격자 크기를 로컬스토리지에 오토 세이브합니다.
+     * 현재의 전역 스프레드시트 데이터 상태 및 격자 크기를 로컬스토리지에 오토 세이브합니다.
      */
     saveToLocalStorage() {
         try {
@@ -245,11 +231,10 @@ class SpreadsheetApp {
     }
 
     /**
-     * [2단계] 페이지 첫 기동 시 로컬스토리지를 검사해 기존 데이터 상태와 격자 크기를 완벽 복구 로드합니다.
+     * 페이지 첫 기동 시 로컬스토리지를 검사해 기존 데이터 상태와 격자 크기를 완벽 복구 로드합니다.
      */
     loadFromLocalStorage() {
         try {
-            // [4단계] 동적 격자 크기 정보 선복원
             const savedRows = localStorage.getItem('pingpong_spreadsheet_max_rows');
             const savedCols = localStorage.getItem('pingpong_spreadsheet_max_cols');
             if (savedRows) this.maxRows = parseInt(savedRows, 10);
@@ -268,7 +253,7 @@ class SpreadsheetApp {
     }
 
     /**
-     * [2단계] 복구된 spreadsheetData 상태를 루프하여 9x9 화면 그리드 td 엘리먼트에 고스란히 뿌려줍니다.
+     * 복구된 spreadsheetData 상태를 루프하여 화면 그리드 td 엘리먼트에 채워줍니다.
      */
     renderAllData() {
         for (const [cellCoord, val] of Object.entries(this.spreadsheetData)) {
@@ -322,7 +307,6 @@ class SpreadsheetApp {
      * 특정 셀에 부합하는 가로(행) 및 세로(열) 헤더 <th>에 하이라이트 적용
      */
     highlightCellHeaders(col, row) {
-        // 이전 하이라이트 이력 초기화
         this.clearAllHeaderHighlights();
 
         const colHeader = document.querySelector(`th[data-header-col="${col}"]`);
@@ -341,12 +325,10 @@ class SpreadsheetApp {
      */
     handleCellMouseDown(e) {
         if (this.isTherapyMode) return;
-        // 이미 해당 셀을 에딧 중인 상태라면 마우스 클릭 동작 무시
         if (this.isEditing && this.currentSelection && this.currentSelection.element === e.currentTarget) {
             return;
         }
 
-        // 다른 곳을 편집 중이었다면 안전하게 저장 후 탈출
         if (this.isEditing && this.currentSelection && this.currentSelection.element) {
             this.exitEditMode(this.currentSelection.element, true);
         }
@@ -355,14 +337,12 @@ class SpreadsheetApp {
         const col = td.dataset.col;
         const row = parseInt(td.dataset.row, 10);
 
-        // A. Shift 키를 누른 상태에서 클릭한 경우: 시작 원점 대비 사각형 범위를 설정함
         if (e.shiftKey) {
             e.preventDefault();
             this.handleShiftClickSelection(td);
             return;
         }
 
-        // B. 일반적인 단일 클릭: 초록 테두리를 즉시 씌우고 드래그를 시작함
         this.selectCell(td);
         this.isDragging = true;
         this.dragStartCell = { col, row };
@@ -396,25 +376,23 @@ class SpreadsheetApp {
 
         if (!start || !end) return;
 
-        // 시작 좌표와 끝 좌표가 동일하면 단일 셀 선택 상태로 유지
         if (start.col === end.col && start.row === end.row) {
             return;
         }
 
-        // 시작 좌표와 끝 좌표가 다르면 type: 'range' 다중 사각형 셀 영역으로 복사 상태를 지정
         this.currentSelection = {
             type: 'range',
             startCol: start.col,
             startRow: start.row,
             endCol: end.col,
             endRow: end.row,
-            element: this.currentSelection.element // 최초 클릭 셀(초록 테두리 소유)을 타겟 원점으로 유지
+            element: this.currentSelection.element
         };
 
         // 실시간 인디케이터에 선택된 사각형 영역 크기를 표현
         const cols = [];
         for (let c = 0; c < this.maxCols; c++) {
-            cols.push(this.getColLetter(c));
+            cols.push(SpreadsheetUtils.getColLetter(c));
         }
         const sColIdx = cols.indexOf(start.col);
         const eColIdx = cols.indexOf(end.col);
@@ -428,7 +406,6 @@ class SpreadsheetApp {
      * Shift + 클릭 선택 핸들러: 기존 포커싱 원점을 기준으로 사각형 영역을 계산해 일괄 선택합니다.
      */
     handleShiftClickSelection(targetTd) {
-        // 기존 포커스된 원점 셀이 없을 경우 단일 선택 처리
         if (!this.currentSelection || !this.currentSelection.element) {
             this.selectCell(targetTd);
             return;
@@ -444,10 +421,8 @@ class SpreadsheetApp {
         this.dragStartCell = { col: startCol, row: startRow };
         this.dragEndCell = { col: endCol, row: endRow };
 
-        // 시작점의 초록색 선택 테두리는 보존하고, 사각형 영역 업데이트 실행
         this.updateDragSelection();
 
-        // 선택 범위 상태 박제
         this.currentSelection = {
             type: 'range',
             startCol: startCol,
@@ -459,7 +434,7 @@ class SpreadsheetApp {
 
         const cols = [];
         for (let c = 0; c < this.maxCols; c++) {
-            cols.push(this.getColLetter(c));
+            cols.push(SpreadsheetUtils.getColLetter(c));
         }
         const sColIdx = cols.indexOf(startCol);
         const eColIdx = cols.indexOf(endCol);
@@ -478,20 +453,22 @@ class SpreadsheetApp {
 
         if (!start || !end) return;
 
-        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+        // 현재 활성화된 컬럼 목록 생성
+        const cols = [];
+        for (let c = 0; c < this.maxCols; c++) {
+            cols.push(SpreadsheetUtils.getColLetter(c));
+        }
+
         const sColIdx = cols.indexOf(start.col);
         const eColIdx = cols.indexOf(end.col);
 
-        // 최소/최대 인덱스 계산을 통해 드래그 방향에 상관없이 완벽한 사각형 획득
         const minColIdx = Math.min(sColIdx, eColIdx);
         const maxColIdx = Math.max(sColIdx, eColIdx);
         const minRow = Math.min(start.row, end.row);
         const maxRow = Math.max(start.row, end.row);
 
-        // 기존 다중 셀 선택 스타일들만 걷어냄
         this.clearAllCellSelections();
 
-        // 2차원 사각형을 돌며 하이라이트 클래스 주입
         for (let r = minRow; r <= maxRow; r++) {
             for (let cIdx = minColIdx; cIdx <= maxColIdx; cIdx++) {
                 const colLetter = cols[cIdx];
@@ -516,7 +493,6 @@ class SpreadsheetApp {
      * 특정 셀을 '선택 대기' 상태(엑셀 초록 테두리)로 전환하는 내부 보조 메서드입니다.
      */
     selectCell(tdElement) {
-        // 기존의 모든 시각적 범위 선택 효과 해제
         this.clearAllCellSelections();
         this.clearSelectedCellClass();
 
@@ -524,14 +500,11 @@ class SpreadsheetApp {
         const row = parseInt(tdElement.dataset.row, 10);
         const cellCoord = tdElement.dataset.cell;
 
-        // 초록 테두리 클래스 주입
         tdElement.classList.add('cell-selected');
 
-        // UI 갱신
         this.setIndicatorText(`Cell: ${cellCoord}`, true);
         this.highlightCellHeaders(col, row);
 
-        // 복사 및 키보드 입력을 위해 선택 상태 객체 갱신
         this.currentSelection = {
             type: 'cell',
             col: col,
@@ -553,63 +526,48 @@ class SpreadsheetApp {
 
     /**
      * [수정 모드 진입]: td 내에 임시 input을 생성해 에딧 모드로 변환합니다.
-     * @param {HTMLElement} tdElement 에딧을 시작할 td 엘리먼트
-     * @param {string|null} initialValue 선택 대기 상태에서 타이핑하여 즉시 유입된 덮어쓰기용 첫 글자 값
      */
     enterEditMode(tdElement, initialValue = null) {
         if (this.isEditing) return;
         this.isEditing = true;
 
-        // td에 에딧 활성화 클래스 동적 주입 (style.css와 연동하여 0패딩으로 인풋창이 꽉 차게 됨)
         tdElement.classList.add('cell-editing-active');
 
         const cellCoord = tdElement.dataset.cell;
-        
-        // A. 기존에 노출되던 순수 텍스트 값 획득 (혹은 저장된 데이터 상태값)
         const originalVal = this.spreadsheetData[cellCoord] || '';
 
-        // B. 임시 input 태그 생성 및 커스텀 스타일 클래스 바인딩
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'cell-input-edit';
 
-        // C. 초기 타이핑 문자가 존재하면 덮어쓰고, 없으면 기존 값을 로드함
         if (initialValue !== null) {
             input.value = initialValue;
         } else {
             input.value = originalVal;
         }
 
-        // D. td의 텍스트 노드를 비우고 동적 인풋 삽입
         tdElement.textContent = '';
         tdElement.appendChild(input);
         
-        // E. 즉시 포커스 유도
         input.focus();
 
-        // 덮어쓰기가 아닌 더블클릭/엔터 진입일 경우 기존 내용 전체 선택 활성화
         if (initialValue === null) {
             input.select();
         }
 
-        // F. 동적 인풋에 대한 이벤트 밀착 바인딩
         input.addEventListener('keydown', (e) => {
             const col = tdElement.dataset.col;
             const row = parseInt(tdElement.dataset.row, 10);
 
             if (e.key === 'Enter') {
-                // 엔터 입력 시: 값 저장 및 탈출 후 아래쪽 셀로 강제 네비게이션
                 e.preventDefault();
                 this.exitEditMode(tdElement, true);
                 this.moveFocus(col, row + 1);
             } else if (e.key === 'Escape') {
-                // ESC 입력 시: 값 롤백(저장 안함) 및 수정 상태 복구 탈출
                 e.preventDefault();
                 this.exitEditMode(tdElement, false);
-                // 다시 초록색 선택 상태로 강제 전환
                 this.selectCell(tdElement);
             } else if (e.key === 'Tab') {
-                // 탭 입력 시: 값 저장 후 오른쪽 셀로 네비게이션
                 e.preventDefault();
                 this.exitEditMode(tdElement, true);
                 const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
@@ -617,7 +575,6 @@ class SpreadsheetApp {
             }
         });
 
-        // 포커스 아웃(마우스 다른 곳 클릭 등) 발생 시 안전하게 저장 후 소멸
         input.addEventListener('blur', () => {
             this.exitEditMode(tdElement, true);
         });
@@ -629,7 +586,6 @@ class SpreadsheetApp {
     exitEditMode(tdElement, shouldSave) {
         if (!this.isEditing) return;
 
-        // td에 에딧 활성화 클래스 즉시 해제 (style.css와 연동하여 td 고유 패딩이 복원됨)
         tdElement.classList.remove('cell-editing-active');
 
         const cellCoord = tdElement.dataset.cell;
@@ -644,26 +600,21 @@ class SpreadsheetApp {
 
         if (shouldSave) {
             const originalVal = this.spreadsheetData[cellCoord] || '';
-            // [3단계] 실제로 값이 변경되었을 때만 실행 취소 스택에 사전 백업 저장
             if (finalValue !== originalVal) {
                 this.saveStateToUndoStack();
             }
 
             if (finalValue !== '') {
-                // 데이터 갱신 및 화면 주입
                 this.updateCellValue(cellCoord, finalValue);
                 tdElement.textContent = finalValue;
             } else {
-                // 빈 칸일 경우 상태 삭제
                 this.deleteCellValue(cellCoord);
                 tdElement.textContent = '';
             }
         } else {
-            // 취소 모드일 경우 기존 데이터로 텍스트 환원
             tdElement.textContent = this.spreadsheetData[cellCoord] || '';
         }
 
-        // 상태값 초기화
         this.isEditing = false;
     }
 
@@ -672,46 +623,34 @@ class SpreadsheetApp {
        ========================================== */
 
     /**
-     * 전역 도큐먼트 키다운 이벤트 분기 처리:
-     * 선택 대기 상태에서의 방향키 이동 및 타이핑 시작 시 덮어쓰기 진입 처리
-     */
-    /**
-     * 전역 도큐먼트 키다운 이벤트 분기 처리:
-     * 선택 대기 상태에서의 방향키 이동 및 타이핑 시작 시 덮어쓰기 진입 처리
+     * 전역 도큐먼트 키다운 이벤트 분기 처리
      */
     handleDocumentKeyDown(e) {
         if (this.isTherapyMode) return;
-        // [3단계] Ctrl + Z 단축키 감지 시 실행 취소(Undo) 실행 (단, 편집 중이 아닐 때)
+        
         if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
             e.preventDefault();
             this.undo();
             return;
         }
 
-        // 만약 셀을 편집(에딧)하고 있는 도중에는 전역 방향키 리스너 작동을 배제합니다.
         if (this.isEditing) return;
-
-        // 선택 대기 중인 영역이 아예 없다면 중단합니다.
         if (!this.currentSelection) return;
 
-        // A. [피드백 반영] Delete 또는 Backspace 입력 시 선택 영역 전체 일괄 삭제 처리
         if (e.key === 'Delete' || e.key === 'Backspace') {
             e.preventDefault();
             this.clearSelectionValues();
             return;
         }
 
-        // 방향키 및 문자 입력 덮어쓰기는 단일 셀 선택 상태('cell')일 때만 허용합니다.
         if (this.currentSelection.type !== 'cell') return;
 
         const col = this.currentSelection.col;
         const row = this.currentSelection.row;
         const currentTd = this.currentSelection.element;
 
-        // B. 방향키 및 주요 특수 키 분기
         switch (e.key) {
             case 'Enter':
-                // 대기 상태에서 엔터를 누르면 더블클릭 효과로 편집 모드 진입
                 e.preventDefault();
                 this.enterEditMode(currentTd);
                 return;
@@ -739,45 +678,37 @@ class SpreadsheetApp {
                 return;
         }
 
-        // C. 덮어쓰기(Overwrite) 타이핑 즉시 감지 장치:
-        // 단일 문자 입력이면서 메타/단축키(Ctrl, Alt 등)가 개입되지 않았을 때만 작동
         if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
             e.preventDefault();
-            // 첫 글자를 품고 즉시 수정 모드로 폭풍 진입합니다!
             this.enterEditMode(currentTd, e.key);
         }
     }
 
     /**
-     * 특정 좌표로 포커스(선택 대기)를 즉시 안전 이동시키는 제어 함수입니다.
+     * 특정 좌표로 포커스를 즉시 안전 이동시키는 제어 함수입니다.
      */
     moveFocus(col, row) {
-        // [경계 조건 방어 코드] 행 범위(1~maxRows)와 열 범위(A~maxCols)를 철저히 검증합니다.
         if (row < 1 || row > this.maxRows) return; 
-        const colIdx = this.getColIndex(col);
+        const colIdx = SpreadsheetUtils.getColIndex(col);
         if (colIdx < 0 || colIdx >= this.maxCols) return; 
 
-        // 이동할 대상 셀의 td 태그 탐색
         const targetTd = document.querySelector(`.spreadsheet-cell[data-cell="${col}${row}"]`);
-        
         if (targetTd) {
             this.selectCell(targetTd);
         }
     }
 
     /**
-     * [피드백 반영] 현재 선택 범위(단일 셀, 범위 드래그, 전체 행/열 등)의 셀 텍스트 및 전역 데이터를 일괄 제거합니다.
+     * 현재 선택 범위의 셀 텍스트 및 전역 데이터를 일괄 제거합니다.
      */
     clearSelectionValues() {
         if (!this.currentSelection) return;
 
-        // [4단계] 하드코딩된 열 범위 대신 현재 활성화된 동적 열 배열 생성
         const cols = [];
         for (let c = 0; c < this.maxCols; c++) {
-            cols.push(this.getColLetter(c));
+            cols.push(SpreadsheetUtils.getColLetter(c));
         }
 
-        // [3단계] 지울 데이터가 실제로 존재하는지 사전 검사
         let hasDataToDelete = false;
         switch (this.currentSelection.type) {
             case 'cell':
@@ -823,14 +754,12 @@ class SpreadsheetApp {
                 break;
         }
 
-        // 지울 데이터가 존재할 때만 실행 취소 스택에 추가
         if (hasDataToDelete) {
             this.saveStateToUndoStack();
         }
 
         switch (this.currentSelection.type) {
             case 'cell':
-                // 1. 단일 셀 삭제
                 const coord = this.currentSelection.cell;
                 this.deleteCellValue(coord);
                 if (this.currentSelection.element) {
@@ -839,7 +768,6 @@ class SpreadsheetApp {
                 break;
 
             case 'range':
-                // 2. 다중 드래그 사각형 범위 일괄 삭제
                 const sColIdx = cols.indexOf(this.currentSelection.startCol);
                 const eColIdx = cols.indexOf(this.currentSelection.endCol);
                 const minColIdx = Math.min(sColIdx, eColIdx);
@@ -860,10 +788,9 @@ class SpreadsheetApp {
                 break;
 
             case 'col':
-                // 3. 열 전체 일괄 삭제
-                const colLetter = this.currentSelection.col;
+                const cLetter = this.currentSelection.col;
                 for (let r = 1; r <= this.maxRows; r++) {
-                    const cellCoord = `${colLetter}${r}`;
+                    const cellCoord = `${cLetter}${r}`;
                     this.deleteCellValue(cellCoord);
                     const td = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
                     if (td) td.textContent = '';
@@ -871,10 +798,9 @@ class SpreadsheetApp {
                 break;
 
             case 'row':
-                // 4. 행 전체 일괄 삭제
-                const rowNum = this.currentSelection.row;
+                const rNum = this.currentSelection.row;
                 cols.forEach(c => {
-                    const cellCoord = `${c}${rowNum}`;
+                    const cellCoord = `${c}${rNum}`;
                     this.deleteCellValue(cellCoord);
                     const td = document.querySelector(`.spreadsheet-cell[data-cell="${cellCoord}"]`);
                     if (td) td.textContent = '';
@@ -882,7 +808,6 @@ class SpreadsheetApp {
                 break;
 
             case 'all':
-                // 5. 시트 전체 초기화 삭제
                 for (let r = 1; r <= this.maxRows; r++) {
                     cols.forEach(c => {
                         const cellCoord = `${c}${r}`;
@@ -897,7 +822,7 @@ class SpreadsheetApp {
     }
 
     /* ==========================================
-       [피드백 반영 - 열 가로 너비(Width) 조절 마우스 조작 모듈]
+       [열 가로 너비(Width) 조절 마우스 조작 모듈]
        ========================================== */
 
     /**
@@ -910,7 +835,6 @@ class SpreadsheetApp {
             handle.className = 'resize-handle';
             th.appendChild(handle);
 
-            // 열 너비 변경 드래그 트리거 바인딩
             handle.addEventListener('mousedown', (e) => this.handleResizeMouseDown(e, th));
         });
     }
@@ -920,14 +844,13 @@ class SpreadsheetApp {
      */
     handleResizeMouseDown(e, th) {
         e.preventDefault();
-        e.stopPropagation(); // 헤더 자체 클릭(열 전체 선택) 이벤트 전파를 철저히 억제합니다.
+        e.stopPropagation();
 
         this.isResizing = true;
         this.resizingTh = th;
         this.resizeStartX = e.clientX;
         this.resizeStartWidth = th.offsetWidth;
 
-        // document 전체에 전역 이동 및 마우스 뗌 이벤트를 결합
         this.resizeMouseMoveHandler = (moveEvt) => this.handleResizeMouseMove(moveEvt);
         this.resizeMouseUpHandler = () => this.handleResizeMouseUp();
 
@@ -942,9 +865,8 @@ class SpreadsheetApp {
         if (!this.isResizing || !this.resizingTh) return;
 
         const deltaX = e.clientX - this.resizeStartX;
-        const newWidth = Math.max(50, this.resizeStartWidth + deltaX); // 최소 너비 50px 방어선 구축
+        const newWidth = Math.max(50, this.resizeStartWidth + deltaX);
 
-        // 테이블 레이아웃 고유 크기 스타일 실시간 동적 적용
         this.resizingTh.style.width = `${newWidth}px`;
     }
 
@@ -956,7 +878,6 @@ class SpreadsheetApp {
         this.isResizing = false;
         this.resizingTh = null;
 
-        // 등록된 전역 리스너 소멸 처리 (메모리 누수 원천 방지)
         document.removeEventListener('mousemove', this.resizeMouseMoveHandler);
         document.removeEventListener('mouseup', this.resizeMouseUpHandler);
         console.log("열 너비 리사이징 동작 완료.");
@@ -970,30 +891,22 @@ class SpreadsheetApp {
      * 열(세로) 헤더 클릭 핸들러: 전체 열 범위 선택 및 복사 범위 지정
      */
     handleColumnHeaderClick(e) {
-        // 만약 열 리사이징 조작 핸들을 클릭한 경우라면 범위 선택 동작을 취소합니다.
         if (e.target.classList.contains('resize-handle')) return;
 
-        // 1. 기존의 시각적 하이라이트들 일괄 정리
         this.clearAllHeaderHighlights();
         this.clearAllCellSelections();
         this.clearSelectedCellClass();
 
-        // 2. 클릭된 세로 열 문자 파악 (예: "C")
         const col = e.target.dataset.headerCol;
-        
-        // 3. 해당 열 헤더에 활성화 하이라이트 입히기
         e.target.classList.add('active-header');
 
-        // 4. 동일한 열 문자 속성을 가진 모든 td 셀을 탐색하여 소프트 블루 배경 주입
         const targetCells = document.querySelectorAll(`.spreadsheet-cell[data-col="${col}"]`);
         targetCells.forEach(cell => {
             cell.classList.add('selected-cell');
         });
 
-        // 5. 좌표 표시기를 해당 열 전체 선택 상태로 표현
         this.setIndicatorText(`Cell: ${col}열`, true);
 
-        // [복사 범위 관리] 해당 열 전체를 복사 타겟으로 지정
         this.currentSelection = {
             type: 'col',
             col: col
@@ -1004,27 +917,20 @@ class SpreadsheetApp {
      * 행(가로) 헤더 클릭 핸들러: 전체 행 범위 선택 및 복사 범위 지정
      */
     handleRowHeaderClick(e) {
-        // 1. 기존 하이라이트 초기화
         this.clearAllHeaderHighlights();
         this.clearAllCellSelections();
         this.clearSelectedCellClass();
 
-        // 2. 클릭된 가로 행 번호 파악 (예: "5")
         const row = parseInt(e.target.dataset.headerRow, 10);
-
-        // 3. 해당 행 헤더 활성화 하이라이트 주입
         e.target.classList.add('active-header');
 
-        // 4. 동일한 행 번호 속성을 지닌 가로라인 td 셀들 일괄 선택 효과
         const targetCells = document.querySelectorAll(`.spreadsheet-cell[data-row="${row}"]`);
         targetCells.forEach(cell => {
             cell.classList.add('selected-cell');
         });
 
-        // 5. 좌표 표시기를 해당 행 전체 선택 상태로 갱신
         this.setIndicatorText(`Cell: ${row}행`, true);
 
-        // [복사 범위 관리] 해당 행 전체를 복사 타겟으로 지정
         this.currentSelection = {
             type: 'row',
             row: row
@@ -1032,29 +938,24 @@ class SpreadsheetApp {
     }
 
     /**
-     * 모서리(코너) 최상단 좌측 셀 클릭 핸들러: 9x9 전체 영역 선택 및 복사 지정
+     * 모서리(코너) 최상단 좌측 셀 클릭 핸들러: 전체 영역 선택 및 복사 지정
      */
     handleCornerHeaderClick() {
-        // 1. 시각 스타일 초기화
         this.clearAllHeaderHighlights();
         this.clearAllCellSelections();
         this.clearSelectedCellClass();
 
-        // 2. 9행(1~9) x 9열(A~I)을 가리키는 모든 헤더 요소를 활성화
         const allThHeaders = document.querySelectorAll('.spreadsheet-table th:not(.corner-header)');
         allThHeaders.forEach(th => {
             th.classList.add('active-header');
         });
 
-        // 3. 81개 전체 td 셀을 선택 하이라이트 배경색으로 변경
         this.cells.forEach(cell => {
             cell.classList.add('selected-cell');
         });
 
-        // 4. 인디케이터 표시 갱신
         this.setIndicatorText("Cell: ALL", true);
 
-        // [복사 범위 관리] 시트의 가로/세로 전체를 복사 대상으로 지정
         this.currentSelection = {
             type: 'all'
         };
@@ -1065,32 +966,26 @@ class SpreadsheetApp {
        ========================================== */
 
     /**
-     * 복사(Ctrl+C) 이벤트 가로채기 핸들러: 
-     * 선택된 영역 구조(단일 셀, 전체 행, 전체 열, 전체 시트)에 어울리는 정밀한 TSV 텍스트를 만들어 클립보드에 주입합니다.
+     * 복사(Ctrl+C) 이벤트 가로채기 핸들러
      */
     handleClipboardCopy(e) {
         if (this.isTherapyMode) return;
-        // 복사 타겟 정보가 아예 없다면 중단합니다.
         if (!this.currentSelection) return;
 
         let copyText = '';
         
-        // [4단계] 동적 열 배열 생성
         const cols = [];
         for (let c = 0; c < this.maxCols; c++) {
-            cols.push(this.getColLetter(c));
+            cols.push(SpreadsheetUtils.getColLetter(c));
         }
 
-        // 복사된 범위 유형에 맞춰 데이터 가공 분기 진행 (TSV 포맷화)
         switch (this.currentSelection.type) {
             case 'cell':
-                // A. 단일 셀 복사: 해당 셀의 데이터 값만 반환
                 const coord = this.currentSelection.cell;
                 copyText = this.spreadsheetData[coord] || '';
                 break;
 
             case 'range':
-                // B. 마우스 드래그 혹은 Shift+클릭 다중 사각형 셀 복사: 선택 사각형 매트릭스를 정밀 TSV 변환
                 const sColIdx = cols.indexOf(this.currentSelection.startCol);
                 const eColIdx = cols.indexOf(this.currentSelection.endCol);
                 const minColIdx = Math.min(sColIdx, eColIdx);
@@ -1113,7 +1008,6 @@ class SpreadsheetApp {
                 break;
 
             case 'col':
-                // C. 세로 열 전체 복사: 1행부터 maxRows행까지 순회하며 수직 형태(개행 구분)로 구성
                 const colLetter = this.currentSelection.col;
                 const colValues = [];
                 for (let r = 1; r <= this.maxRows; r++) {
@@ -1124,7 +1018,6 @@ class SpreadsheetApp {
                 break;
 
             case 'row':
-                // D. 가로 행 전체 복사: A열부터 마지막 열까지 순회하며 수평 형태(탭 구분)로 구성
                 const rowNum = this.currentSelection.row;
                 const rowValues = [];
                 cols.forEach(c => {
@@ -1135,7 +1028,6 @@ class SpreadsheetApp {
                 break;
 
             case 'all':
-                // E. 시트 전체 복사: 2차원 데이터를 탭(\t)과 개행(\r\n)으로 바인딩
                 const gridRows = [];
                 for (let r = 1; r <= this.maxRows; r++) {
                     const rowCells = [];
@@ -1149,88 +1041,67 @@ class SpreadsheetApp {
                 break;
         }
 
-        // 획득한 데이터를 운영체제 클립보드 객체에 텍스트 타입으로 덮어씁니다.
         e.clipboardData.setData('text/plain', copyText);
-        
-        // 브라우저 자체 드래그 범위 복사 등의 기본 억제 동작 차단
         e.preventDefault();
         
         console.log("클립보드에 스프레드시트 호환 복사 완료:", copyText);
     }
 
     /**
-     * 붙여넣기(Ctrl+V) 이벤트 가로채기 핸들러:
-     * 외부 스프레드시트(구글 시트, 엑셀)에서 복사해 온 TSV 구조를 파싱해 활성 셀 원점(0,0)을 기준으로 2차원 분할 착지시킵니다.
-     */
-    /**
-     * 붙여넣기(Ctrl+V) 이벤트 가로채기 핸들러:
-     * 외부 스프레드시트(구글 시트, 엑셀)에서 복사해 온 TSV 구조를 파싱해 활성 셀 원점(0,0)을 기준으로 2차원 분할 착지시킵니다.
+     * 붙여넣기(Ctrl+V) 이벤트 가로채기 핸들러
      */
     handleClipboardPaste(e) {
         if (this.isTherapyMode) return;
-        // 현재 활성화된 포커스 셀이 없거나 단일 셀이 아니라면 붙여넣기를 수행할 원점이 모호하므로 중단합니다.
         if (!this.currentSelection || this.currentSelection.type !== 'cell') return;
 
-        // 클립보드로부터 원본 텍스트 데이터 획득
         const clipboardData = e.clipboardData || window.clipboardData;
         const pastedText = clipboardData.getData('text');
         
         if (!pastedText) return;
 
-        // 붙여넣기를 전개할 시작 원점 셀 정보 획득
         const startCol = this.currentSelection.col;
         const startRow = this.currentSelection.row;
 
         e.preventDefault();
 
-        // [피드백 반영] 공통 2차원 해독 모듈(importTSVData)로 파싱 처리를 완전히 이관 단일화
         this.importTSVData(pastedText, startCol, startRow);
         console.log("외부 클립보드 다중 셀 2차원 붙여넣기 착지 완료.");
     }
 
     /**
-     * [피드백 반영] 탭(TSV)으로 구분된 데이터를 좌표에 맞춰 2차원 해독 렌더링하고 상태 모델에 기입하는 핵심 공통 모듈입니다.
+     * 탭(TSV)으로 구분된 데이터를 좌표에 맞춰 2차원 해독 렌더링하고 상태 모델에 기입하는 핵심 공통 모듈입니다.
      */
     importTSVData(tsvText, startCol, startRow, skipUndo = false) {
-        // [3단계] 스킵 플래그가 꺼져 있을 때만(예: Ctrl+V 붙여넣기 등) 실행 취소 백업 진행
         if (!skipUndo) {
             this.saveStateToUndoStack();
         }
 
-        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+        // [부품 위임] 탭 문자 해독 처리를 SpreadsheetUtils에 전격 위임합니다.
+        const dataMatrix = SpreadsheetUtils.parseTSV(tsvText);
+
+        const cols = [];
+        for (let c = 0; c < this.maxCols; c++) {
+            cols.push(SpreadsheetUtils.getColLetter(c));
+        }
         const startColIndex = cols.indexOf(startCol);
 
-        // 1. 줄바꿈을 구분으로 가로 행 분할
-        let lines = tsvText.split(/\r?\n/);
-        
-        // 뒤따르는 불필요한 개행 공백 행이 있으면 필터링
-        if (lines.length > 0 && lines[lines.length - 1] === '') {
-            lines.pop();
-        }
-
-        // 2. 가로 행 내부 데이터들을 탭으로 2차원 배열화
-        const dataMatrix = lines.map(line => line.split('\t'));
-
-        // 3. 2차원 루프 순회 돌며 화면 및 비즈니스 데이터 일치 렌더링
         for (let i = 0; i < dataMatrix.length; i++) {
             const targetRow = startRow + i;
-            if (targetRow > 9) break; // 9행 경계 보호
+            if (targetRow > this.maxRows) break; // 동적 행 경계 보호
 
             for (let j = 0; j < dataMatrix[i].length; j++) {
                 const targetColIndex = startColIndex + j;
-                if (targetColIndex > 8) break; // I열 경계 보호
+                if (targetColIndex >= this.maxCols) break; // 동적 열 경계 보호
 
                 const targetColLetter = cols[targetColIndex];
                 const targetCoord = `${targetColLetter}${targetRow}`;
                 const cellValue = dataMatrix[i][j].trim();
 
-                // 화면 td 탐색 및 갱신
                 const cellTd = document.querySelector(`.spreadsheet-cell[data-cell="${targetCoord}"]`);
                 if (cellTd) {
                     cellTd.textContent = cellValue;
                 }
 
-                // 데이터 모델 동시 갱신
                 if (cellValue !== '') {
                     this.updateCellValue(targetCoord, cellValue);
                 } else {
@@ -1241,11 +1112,15 @@ class SpreadsheetApp {
     }
 
     /**
-     * [피드백 반영] 시트의 모든 값과 내부 데이터 상태를 완전히 초기화(청소)합니다.
+     * 시트의 모든 값과 내부 데이터 상태를 완전히 초기화(청소)합니다.
      */
     clearAllSheetData() {
-        const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
-        for (let r = 1; r <= 9; r++) {
+        const cols = [];
+        for (let c = 0; c < this.maxCols; c++) {
+            cols.push(SpreadsheetUtils.getColLetter(c));
+        }
+
+        for (let r = 1; r <= this.maxRows; r++) {
             cols.forEach(c => {
                 const cellCoord = `${c}${r}`;
                 this.deleteCellValue(cellCoord);
@@ -1256,17 +1131,13 @@ class SpreadsheetApp {
     }
 
     /**
-     * [피드백 반영] One-Click 테스트용 목업 데이터를 A1 원점 기점으로 주입합니다.
+     * One-Click 테스트용 목업 데이터를 A1 원점 기점으로 주입합니다.
      */
     injectSampleMockupData() {
-        // [피드백 반영] 예/아니오 대화 경고창 출력 및 유실 방지 가드
         const proceed = confirm("목업 데이터가 시트에 입력되고 현재 데이터는 지워집니다. 입력할까요?");
         if (!proceed) return;
 
-        // [3단계] 싹 비워지기 전, 기존 데이터를 안전하게 되돌리기 위해 미리 백업 저장
         this.saveStateToUndoStack();
-
-        // 기존 모든 시트 데이터를 완벽히 제거 (완전한 오버라이트 주입 사양 충족)
         this.clearAllSheetData();
 
         const mockupTSV = `품명\t규격\t수량\t단가\t합계\t상태\t구분\t담당자\t비고
@@ -1279,10 +1150,8 @@ iPad Pro 11\tM2 256G\t5\t1240000\t6200000\t출고완료\t태블릿\t강태호\t�
 Galaxy Tab S9\tUltra\t4\t1370000\t5480000\t입고대기\t태블릿\t윤서연\t모바일개발팀
 Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지민\t클라우드 구독`;
 
-        // 4번째 인자(skipUndo)로 true를 전달하여 중복 백업을 건너뜁니다.
         this.importTSVData(mockupTSV, 'A', 1, true);
         
-        // 데이터 주입 완료 후 A1 셀을 디폴트 선택 상태로 활성화
         const firstCell = document.querySelector('.spreadsheet-cell[data-cell="A1"]');
         if (firstCell) {
             this.selectCell(firstCell);
@@ -1296,35 +1165,11 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
        ========================================== */
 
     /**
-     * 전역 상태 spreadsheetData를 구글 스프레드시트 규격 A1:I9 좌표계로 정밀 변환하여 파일 다운로드를 트리거합니다.
+     * [부품 위임] Excel 변환 처리를 SpreadsheetUtils에 전격 이관하여 실행합니다.
      */
     exportToExcel() {
         try {
-            // A. 새로운 워크북 패키지 구축
-            const wb = XLSX.utils.book_new();
-
-            // B. 데이터와 셀 서식을 매핑할 임시 시트 컨테이너 객체
-            const ws = {};
-
-            // [구글 스프레드시트 100% 호환 장치]
-            // 데이터 유무와 상관없이 물리적으로 가로 A~[maxCols], 세로 1~[maxRows] 범위 크기를 강제 고정하여 업로드 시 왜곡 현상을 완벽 방제합니다.
-            const lastColLetter = this.getColLetter(this.maxCols - 1);
-            ws['!ref'] = `A1:${lastColLetter}${this.maxRows}`;
-
-            // C. 누적된 데이터를 순회하며 좌표 셀마다 텍스트 타입('s')으로 정보 저장
-            for (const [cellCoord, val] of Object.entries(this.spreadsheetData)) {
-                ws[cellCoord] = {
-                    v: val,
-                    t: 's' // 문자열 형태 지정
-                };
-            }
-
-            // D. 작성된 시트를 워크북 객체에 Sheet1이라는 명칭으로 주입
-            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-
-            // E. 브라우저 실제 로컬 하드 드라이브로 파일(spreadsheet.xlsx) 다운로드 강제 유도
-            XLSX.writeFile(wb, "spreadsheet.xlsx");
-
+            SpreadsheetUtils.exportToExcel(this.spreadsheetData, this.maxCols, this.maxRows);
             console.log("엑셀 다운로드 처리 완료: spreadsheet.xlsx가 로컬로 저장되었습니다.");
         } catch (error) {
             console.error("SheetJS 파일 내보내기 장애 발생:", error);
@@ -1333,32 +1178,25 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /**
-     * [4단계 추가 보완] 시트를 완전히 초기 상태인 9x9 빈 격자로 원복하고 로컬스토리지를 깨끗이 비웁니다.
+     * 시트를 완전히 초기 상태인 9x9 빈 격자로 원복하고 로컬스토리지를 깨끗이 비웁니다.
      */
     resetSheetToDefault() {
         const proceed = confirm("시트가 초기화 되고 현재 데이터는 지워집니다. 초기화 할까요?");
         if (!proceed) return;
 
-        // 리셋 실행 전에 현재 상태를 실행 취소(Undo) 스택에 백업하여 실수 방어
         this.saveStateToUndoStack();
 
-        // 1. 상태 모델 및 격자 차원 전면 초기화
         this.spreadsheetData = {};
         this.maxRows = 9;
         this.maxCols = 9;
 
-        // 2. 로컬스토리지에서 기존 세션 데이터 영구 파괴 제거
         localStorage.removeItem('pingpong_spreadsheet_data');
         localStorage.removeItem('pingpong_spreadsheet_max_rows');
         localStorage.removeItem('pingpong_spreadsheet_max_cols');
 
-        // 3. 빈 9x9 규격으로 그리드 DOM 전면 리빌드
         this.rebuildGrid();
-
-        // 4. 리셋된 깨끗한 구조로 스토리지 상태 강제 오토 세이브
         this.saveToLocalStorage();
 
-        // 5. 선택 이력 완벽 소멸 초기화
         this.currentSelection = null;
         this.setIndicatorText("Cell: 선택 안 됨");
         this.clearAllHeaderHighlights();
@@ -1371,32 +1209,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
        ========================================== */
 
     /**
-     * [4단계] 0-based 열 인덱스를 알파벳 문자열로 변환합니다. (예: 0 -> 'A', 25 -> 'Z', 26 -> 'AA')
-     */
-    getColLetter(index) {
-        let temp = index;
-        let letter = '';
-        while (temp >= 0) {
-            letter = String.fromCharCode((temp % 26) + 65) + letter;
-            temp = Math.floor(temp / 26) - 1;
-        }
-        return letter;
-    }
-
-    /**
-     * [4단계] 알파벳 열 문자열을 0-based 열 인덱스로 변환합니다. (예: 'A' -> 0, 'Z' -> 25, 'AA' -> 26)
-     */
-    getColIndex(letter) {
-        let index = 0;
-        for (let i = 0; i < letter.length; i++) {
-            index = index * 26 + (letter.charCodeAt(i) - 64);
-        }
-        return index - 1;
-    }
-
-    /**
-     * [4단계] 현재 maxRows와 maxCols 정보에 맞춰 DOM 테이블 격자를 실시간 재생성하고 데이터를 주입합니다.
-     * [피드백 반영] 행/열 헤더 셀(th)에 마우스 호버 시 우측 안쪽에 동그란 미니 +, - 조절 단추가 플로팅되어 즉시 삽입/삭제를 수행합니다.
+     * 현재 maxRows와 maxCols 정보에 맞춰 DOM 테이블 격자를 실시간 재생성하고 데이터를 주입합니다.
      */
     rebuildGrid() {
         if (!this.table) return;
@@ -1405,26 +1218,22 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         const tbody = this.table.querySelector('tbody');
         if (!thead || !tbody) return;
 
-        // 1. 기존 격자 HTML 청소
         thead.innerHTML = '';
         tbody.innerHTML = '';
 
-        // 2. thead (열 헤더 행) 동적 빌드
         const headerTr = document.createElement('tr');
         const cornerTh = document.createElement('th');
         cornerTh.className = 'corner-header';
         headerTr.appendChild(cornerTh);
 
         for (let c = 0; c < this.maxCols; c++) {
-            const colLetter = this.getColLetter(c);
+            const colLetter = SpreadsheetUtils.getColLetter(c);
             const th = document.createElement('th');
             th.setAttribute('data-header-col', colLetter);
             
-            // 텍스트 기입
             const textNode = document.createTextNode(colLetter);
             th.appendChild(textNode);
 
-            // 미니 제어 버튼 그룹 동적 생성 및 우측 배치
             const btnGroup = document.createElement('div');
             btnGroup.className = 'header-btn-group';
 
@@ -1433,7 +1242,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             addBtn.textContent = '+';
             addBtn.title = `${colLetter}열 우측에 새 열 추가`;
             addBtn.addEventListener('click', (evt) => {
-                evt.stopPropagation(); // 헤더 자체 클릭(열 전체 선택)으로의 전파 철저히 차단
+                evt.stopPropagation();
                 this.addCol(colLetter);
             });
 
@@ -1454,19 +1263,15 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
         thead.appendChild(headerTr);
 
-        // 3. tbody (행 데이터) 동적 빌드
         for (let r = 1; r <= this.maxRows; r++) {
             const rowTr = document.createElement('tr');
             
-            // 행 인덱스 헤더 <th>
             const rowTh = document.createElement('th');
             rowTh.setAttribute('data-header-row', r);
             
-            // 텍스트 기입
             const textNode = document.createTextNode(r);
             rowTh.appendChild(textNode);
 
-            // 미니 제어 버튼 그룹 동적 생성 및 우측 배치
             const btnGroup = document.createElement('div');
             btnGroup.className = 'header-btn-group';
 
@@ -1475,7 +1280,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             addBtn.textContent = '+';
             addBtn.title = `${r}행 아래쪽에 새 행 추가`;
             addBtn.addEventListener('click', (evt) => {
-                evt.stopPropagation(); // 헤더 자체 클릭(행 전체 선택) 전파 방지
+                evt.stopPropagation();
                 this.addRow(r);
             });
 
@@ -1494,9 +1299,8 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
 
             rowTr.appendChild(rowTh);
 
-            // 데이터 <td> 셀들 생성
             for (let c = 0; c < this.maxCols; c++) {
-                const colLetter = this.getColLetter(c);
+                const colLetter = SpreadsheetUtils.getColLetter(c);
                 const cellCoord = `${colLetter}${r}`;
                 const td = document.createElement('td');
                 td.className = 'spreadsheet-cell';
@@ -1504,28 +1308,20 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
                 td.setAttribute('data-col', colLetter);
                 td.setAttribute('data-row', r);
 
-                // 데이터 모델에 값이 이미 기입되어 있다면 출력
                 td.textContent = this.spreadsheetData[cellCoord] || '';
                 rowTr.appendChild(td);
             }
             tbody.appendChild(rowTr);
         }
 
-        // 4. 셀 캐시 최신화
         this.cells = document.querySelectorAll('.spreadsheet-cell');
-
-        // 5. 열 너비 리사이징 조절 바 동적 재배치
         this.initColumnResizers();
-
-        // 6. 새로 동적 생성된 셀들에 대해 이벤트 리스너 재장착
         this.rebindCellEvents();
-
-        // 7. 새로 생성된 헤더들의 이벤트 리스너 재결합
         this.rebindHeaderEvents();
     }
 
     /**
-     * [4단계] 동적으로 교체된 셀(td)들에 기존 1~3단계 이벤트 리스너를 다시 바인딩합니다.
+     * 동적으로 교체된 셀(td)들에 이벤트 리스너를 다시 바인딩합니다.
      */
     rebindCellEvents() {
         this.cells.forEach(cell => {
@@ -1536,14 +1332,13 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /**
-     * [4단계] 동적으로 교체된 헤더(th)들에 기존의 행/열 선택 클릭 이벤트 리스너를 재결합합니다.
+     * 동적으로 교체된 헤더(th)들에 이벤트 리스너를 재결합합니다.
      */
     rebindHeaderEvents() {
         const columnHeaders = this.table.querySelectorAll('th[data-header-col]');
         const rowHeaders = this.table.querySelectorAll('th[data-header-row]');
 
         columnHeaders.forEach(th => {
-            // 버튼 자체 클릭 시에는 헤더 전체 선택 이벤트가 발동하지 않도록 방어 분기
             th.addEventListener('click', (e) => {
                 if (e.target.classList.contains('mini-btn') || e.target.closest('.header-btn-group')) return;
                 this.handleColumnHeaderClick(e);
@@ -1564,10 +1359,9 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /**
-     * [4단계] 특정 행(targetRow) 아래에 새로운 행을 추가하고 데이터 좌표를 아래로 1칸씩 밀어냅니다 (Shift Down).
+     * 특정 행 아래에 새로운 행을 추가하고 데이터 좌표를 아래로 1칸씩 밀어냅니다 (Shift Down).
      */
     addRow(targetRow = null) {
-        // 1. 삽입 기준 행 파악
         if (targetRow === null) {
             if (this.currentSelection) {
                 if (this.currentSelection.type === 'cell') {
@@ -1583,12 +1377,10 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
 
         targetRow = parseInt(targetRow, 10);
-        const insertAt = targetRow + 1; // 특정 지정 행 바로 아래 행에 삽입
+        const insertAt = targetRow + 1;
 
-        // 2. 파괴적 행 변동 전 실행 취소(Undo) 1회 백업 저장
         this.saveStateToUndoStack();
 
-        // 3. 데이터 시프트: insertAt보다 크거나 같은 행들의 데이터를 1씩 밑으로 밀어냄
         const newData = {};
         for (const [key, value] of Object.entries(this.spreadsheetData)) {
             const col = key.match(/[A-Z]+/)[0];
@@ -1601,18 +1393,15 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
         this.spreadsheetData = newData;
 
-        // 4. 상태 행 수 증가 및 화면 리빌드
         this.maxRows++;
         this.rebuildGrid();
-
-        // 5. 로컬스토리지 강제 세이브 동기화
         this.saveToLocalStorage();
 
         console.log(`행 추가 완료. 삽입 위치: ${insertAt}행, 전체 행수: ${this.maxRows}`);
     }
 
     /**
-     * [4단계] 지정된 행(targetRow)을 삭제하고 아래쪽의 데이터 좌표를 위로 1칸씩 당깁니다 (Shift Up).
+     * 지정된 행을 삭제하고 아래쪽의 데이터 좌표를 위로 1칸씩 당깁니다 (Shift Up).
      */
     deleteRow(targetRow = null) {
         if (this.maxRows <= 1) {
@@ -1620,7 +1409,6 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             return;
         }
 
-        // 1. 삭제 대상 행 파악
         if (targetRow === null) {
             if (this.currentSelection) {
                 if (this.currentSelection.type === 'cell') {
@@ -1637,16 +1425,14 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
 
         targetRow = parseInt(targetRow, 10);
 
-        // 2. 행 삭제 전 실행 취소(Undo) 1회 백업 저장
         this.saveStateToUndoStack();
 
-        // 3. 데이터 시프트: targetRow를 지우고, targetRow보다 큰 행들의 데이터를 1씩 위로 당김
         const newData = {};
         for (const [key, value] of Object.entries(this.spreadsheetData)) {
             const col = key.match(/[A-Z]+/)[0];
             const r = parseInt(key.match(/[0-9]+/)[0], 10);
             if (r === targetRow) {
-                continue; // 삭제
+                continue;
             } else if (r > targetRow) {
                 newData[`${col}${r - 1}`] = value;
             } else {
@@ -1655,54 +1441,47 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
         this.spreadsheetData = newData;
 
-        // 4. 상태 행 수 감소 및 화면 리빌드
         this.maxRows = Math.max(1, this.maxRows - 1);
         
-        // 5. 선택 정보 해제
         this.currentSelection = null;
         this.setIndicatorText("Cell: 선택 안 됨");
         this.clearAllHeaderHighlights();
 
         this.rebuildGrid();
-
-        // 6. 로컬스토리지 강제 세이브 동기화
         this.saveToLocalStorage();
 
         console.log(`행 삭제 완료. 대상: ${targetRow}행, 전체 행수: ${this.maxRows}`);
     }
 
     /**
-     * [4단계] 지정한 열(targetColLetter) 우측에 새로운 열을 추가하고 데이터 좌표를 우측으로 1칸씩 밀어냅니다 (Shift Right).
+     * 지정한 열 우측에 새로운 열을 추가하고 데이터 좌표를 우측으로 1칸씩 밀어냅니다 (Shift Right).
      */
     addCol(targetColLetter = null) {
-        // 1. 삽입 기준 열 파악
-        let targetColIdx = this.maxCols - 1; // 디폴트는 맨 끝
+        let targetColIdx = this.maxCols - 1;
         if (targetColLetter !== null) {
-            targetColIdx = this.getColIndex(targetColLetter);
+            targetColIdx = SpreadsheetUtils.getColIndex(targetColLetter);
         } else if (this.currentSelection) {
             if (this.currentSelection.type === 'cell') {
-                targetColIdx = this.getColIndex(this.currentSelection.col);
+                targetColIdx = SpreadsheetUtils.getColIndex(this.currentSelection.col);
             } else if (this.currentSelection.type === 'range') {
-                targetColIdx = this.getColIndex(this.currentSelection.startCol);
+                targetColIdx = SpreadsheetUtils.getColIndex(this.currentSelection.startCol);
             } else if (this.currentSelection.type === 'col') {
-                targetColIdx = this.getColIndex(this.currentSelection.col);
+                targetColIdx = SpreadsheetUtils.getColIndex(this.currentSelection.col);
             }
         }
 
-        const insertAtIdx = targetColIdx + 1; // 지정 열 바로 오른쪽에 삽입
+        const insertAtIdx = targetColIdx + 1;
 
-        // 2. 파괴적 열 변동 전 실행 취소(Undo) 1회 백업 저장
         this.saveStateToUndoStack();
 
-        // 3. 데이터 시프트: insertAtIdx보다 크거나 같은 열들의 데이터를 1씩 우측으로 밀어냄
         const newData = {};
         for (const [key, value] of Object.entries(this.spreadsheetData)) {
             const col = key.match(/[A-Z]+/)[0];
             const r = parseInt(key.match(/[0-9]+/)[0], 10);
-            const cIdx = this.getColIndex(col);
+            const cIdx = SpreadsheetUtils.getColIndex(col);
             
             if (cIdx >= insertAtIdx) {
-                const nextColLetter = this.getColLetter(cIdx + 1);
+                const nextColLetter = SpreadsheetUtils.getColLetter(cIdx + 1);
                 newData[`${nextColLetter}${r}`] = value;
             } else {
                 newData[key] = value;
@@ -1710,18 +1489,15 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
         this.spreadsheetData = newData;
 
-        // 4. 상태 열 수 증가 및 화면 리빌드
         this.maxCols++;
         this.rebuildGrid();
-
-        // 5. 로컬스토리지 강제 세이브 동기화
         this.saveToLocalStorage();
 
-        console.log(`열 추가 완료. 삽입 위치: ${this.getColLetter(insertAtIdx)}열, 전체 열수: ${this.maxCols}`);
+        console.log(`열 추가 완료. 삽입 위치: ${SpreadsheetUtils.getColLetter(insertAtIdx)}열, 전체 열수: ${this.maxCols}`);
     }
 
     /**
-     * [4단계] 지정한 열(targetColLetter)을 삭제하고 우측의 데이터 좌표를 좌측으로 1칸씩 당깁니다 (Shift Left).
+     * 지정한 열을 삭제하고 우측의 데이터 좌표를 좌측으로 1칸씩 당깁니다 (Shift Left).
      */
     deleteCol(targetColLetter = null) {
         if (this.maxCols <= 1) {
@@ -1729,34 +1505,31 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             return;
         }
 
-        // 1. 삭제 대상 열 파악
-        let targetColIdx = this.maxCols - 1; // 디폴트는 맨 끝
+        let targetColIdx = this.maxCols - 1;
         if (targetColLetter !== null) {
-            targetColIdx = this.getColIndex(targetColLetter);
+            targetColIdx = SpreadsheetUtils.getColIndex(targetColLetter);
         } else if (this.currentSelection) {
             if (this.currentSelection.type === 'cell') {
-                targetColIdx = this.getColIndex(this.currentSelection.col);
+                targetColIdx = SpreadsheetUtils.getColIndex(this.currentSelection.col);
             } else if (this.currentSelection.type === 'range') {
-                targetColIdx = this.getColIndex(this.currentSelection.startCol);
+                targetColIdx = SpreadsheetUtils.getColIndex(this.currentSelection.startCol);
             } else if (this.currentSelection.type === 'col') {
-                targetColIdx = this.getColIndex(this.currentSelection.col);
+                targetColIdx = SpreadsheetUtils.getColIndex(this.currentSelection.col);
             }
         }
 
-        // 2. 열 삭제 전 실행 취소(Undo) 1회 백업 저장
         this.saveStateToUndoStack();
 
-        // 3. 데이터 시프트: targetColIdx를 지우고, targetColIdx보다 큰 열들의 데이터를 1씩 좌측으로 당김
         const newData = {};
         for (const [key, value] of Object.entries(this.spreadsheetData)) {
             const col = key.match(/[A-Z]+/)[0];
             const r = parseInt(key.match(/[0-9]+/)[0], 10);
-            const cIdx = this.getColIndex(col);
+            const cIdx = SpreadsheetUtils.getColIndex(col);
 
             if (cIdx === targetColIdx) {
-                continue; // 삭제
+                continue;
             } else if (cIdx > targetColIdx) {
-                const prevColLetter = this.getColLetter(cIdx - 1);
+                const prevColLetter = SpreadsheetUtils.getColLetter(cIdx - 1);
                 newData[`${prevColLetter}${r}`] = value;
             } else {
                 newData[key] = value;
@@ -1764,28 +1537,24 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
         this.spreadsheetData = newData;
 
-        // 4. 상태 열 수 감소 및 화면 리빌드
         this.maxCols = Math.max(1, this.maxCols - 1);
 
-        // 5. 선택 정보 해제
         this.currentSelection = null;
         this.setIndicatorText("Cell: 선택 안 됨");
         this.clearAllHeaderHighlights();
 
         this.rebuildGrid();
-
-        // 6. 로컬스토리지 강제 세이브 동기화
         this.saveToLocalStorage();
 
         console.log(`열 삭제 완료. 대상 인덱스: ${targetColIdx}, 전체 열수: ${this.maxCols}`);
     }
 
     /* ==========================================
-       [5단계 - 오피스 스텔스 테라피 휴식 ☕ 매칭 게임 독립 라이프사이클 엔진]
+       [5단계 - 오피스 스텔스 테라피 휴식 매칭 게임 독립 라이프사이클 엔진 결합]
        ========================================== */
 
     /**
-     * [5단계] 테라피 휴식 게임 모드의 온/오프 상태를 제어하는 토글러입니다.
+     * 테라피 휴식 게임 모드의 온/오프 상태를 제어하는 토글러입니다.
      */
     toggleTherapyMode() {
         if (this.isEditing && this.currentSelection && this.currentSelection.element) {
@@ -1800,24 +1569,22 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /**
-     * [5단계] 테라피 휴식 모드 개시: 시트를 대피시키지 않고 A1~D5 범위만 위장 테두리를 씌워 플레이합니다.
+     * 테라피 휴식 모드 개시
      */
     startTherapyMode() {
         this.isTherapyMode = true;
 
-        // 1. 기존 선택 및 에딧 상태 정리
         this.clearAllCellSelections();
         this.clearSelectedCellClass();
         this.clearAllHeaderHighlights();
 
-        // 2. 기존 데이터 및 크기 레이아웃 메모리 백업
         this.sheetBackup = {
             data: JSON.parse(JSON.stringify(this.spreadsheetData)),
             rows: this.maxRows,
             cols: this.maxCols
         };
 
-        // 3. 기존 액션 버튼들 visually disable 처리
+        // 기존 액션 버튼들 visually disable 처리
         this.exportButton.style.opacity = '0.5';
         this.exportButton.style.pointerEvents = 'none';
         const sampleBtn = document.getElementById('sample-btn');
@@ -1836,21 +1603,26 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             resetBtn.style.pointerEvents = 'none';
         }
 
-        // 4. '테라피 휴식' 버튼 텍스트 변경 대신 액티브 외곽선 효과 바인딩 (이미지 유지)
         const therapyBtn = document.getElementById('therapy-btn');
         if (therapyBtn) {
             therapyBtn.classList.add('toolbar-btn-active');
             therapyBtn.setAttribute('title', '자유시간 메모리 게임 종료');
         }
 
-        // 5. 은밀한 수식 입력줄 형태의 대시보드 동적 삽입 (테이블 바로 위에 삽입)
+        // 은밀한 대시보드 동적 삽입
         const appContainer = document.querySelector('.app-container');
         const gridContainer = document.querySelector('.grid-container');
         const dashboard = document.createElement('div');
         dashboard.className = 'therapy-dashboard';
         dashboard.id = 'therapy-dashboard';
 
-        const bestRecordStr = this.getBestRecord() || '없음';
+        // [부품 위임] 임시 엔진 인스턴스를 만들고 최고 기록을 가져옵니다.
+        // 엔진 생성 시, 1초 타이머가 흘렀을 때 화면 글자(00:00)를 바꾸는 전원 연결부 콜백을 주입합니다.
+        this.gameEngine = new StealthGameEngine((elapsedSeconds) => {
+            this.updateTherapyTimerDisplay(elapsedSeconds);
+        });
+
+        const bestRecordStr = this.gameEngine.getBestRecord() || '없음';
         dashboard.innerHTML = `
             <div>☕ STEALTH ANALYZER - A1:D5 DATA RANGE SELECTED</div>
             <div>
@@ -1859,38 +1631,33 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             </div>
         `;
 
-        // 테이블 컨테이너 이전에 대시보드 삽입
         appContainer.insertBefore(dashboard, gridContainer);
 
-        // 6. 게임 상태 초기화 및 카드 기하학 렌더링
         this.initTherapyGame();
     }
 
     /**
-     * [5단계] 테라피 휴식 모드 철수: 스텔스 카드 테두리를 걷어내고 원래 셀 데이터로 완전 복원합니다.
+     * 테라피 휴식 모드 철수: 원래 셀 데이터로 완전 복원합니다.
      */
     stopTherapyMode() {
         this.isTherapyMode = false;
 
-        // 1. 타이머 인스턴스 소멸
-        if (this.therapyTimer) {
-            clearInterval(this.therapyTimer);
-            this.therapyTimer = null;
+        // [부품 위임] 타이머 소멸 처리 위임
+        if (this.gameEngine) {
+            this.gameEngine.stopTimer();
+            this.gameEngine = null;
         }
 
-        // 2. 은밀한 대시보드 DOM 제거
         const dashboard = document.getElementById('therapy-dashboard');
         if (dashboard) {
             dashboard.remove();
         }
 
-        // 3. 성공 패널이 있으면 제거
         const successPanel = document.getElementById('stealth-success-panel');
         if (successPanel) {
             successPanel.remove();
         }
 
-        // 4. 버튼들 활성화 원상복귀
         this.exportButton.style.opacity = '1';
         this.exportButton.style.pointerEvents = 'auto';
         const sampleBtn = document.getElementById('sample-btn');
@@ -1909,25 +1676,22 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             resetBtn.style.pointerEvents = 'auto';
         }
 
-        // 5. '테라피 휴식' 버튼 복구 (액티브 효과 해제, 이미지 유지)
         const therapyBtn = document.getElementById('therapy-btn');
         if (therapyBtn) {
             therapyBtn.classList.remove('toolbar-btn-active');
             therapyBtn.setAttribute('title', '자유시간 메모리 게임 시작');
         }
 
-        // 6. A1~D5의 20개 셀의 스텔스 클래스 및 이벤트 정리, 원본 텍스트 복구
+        // A1~D5의 20개 셀의 백업 텍스트 복구
         const cols = ['A', 'B', 'C', 'D'];
         for (let r = 1; r <= 5; r++) {
             cols.forEach(c => {
                 const coord = `${c}${r}`;
                 const td = document.querySelector(`.spreadsheet-cell[data-cell="${coord}"]`);
                 if (td) {
-                    // 원래 보존해 둔 텍스트 획득
                     const originalText = td.getAttribute('data-original-val') || '';
                     td.textContent = originalText;
                     
-                    // 스텔스 관련 모든 특성 제거
                     td.removeAttribute('data-original-val');
                     td.removeAttribute('data-flag');
                     td.className = 'spreadsheet-cell';
@@ -1936,7 +1700,6 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             });
         }
 
-        // 7. 데이터 백업 원상 복구 및 DOM 재생성 그리드 리바인딩
         if (this.sheetBackup) {
             this.spreadsheetData = this.sheetBackup.data;
             this.maxRows = this.sheetBackup.rows;
@@ -1944,34 +1707,20 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         }
         this.rebuildGrid();
 
-        // 8. 인디케이터 초기화
         this.setIndicatorText("Cell: 선택 안 됨");
     }
 
     /**
-     * [5단계] A1~D5 영역에 위장 테두리를 씌우고 Flag CDN 실물 국기 매핑 렌더링
+     * A1~D5 영역에 위장 카드 테두리를 씌우고 실물 국기 매핑 렌더링
      */
     initTherapyGame() {
-        // 상태 청소
-        this.therapyTimeElapsed = 0;
         this.firstFlippedCard = null;
         this.secondFlippedCard = null;
         this.lockTherapyBoard = false;
-        this.matchedCount = 0;
 
-        // 미국, 일본, 이스라엘 국기가 엄격히 배제된 친화 평화 10개국 리스트
-        const baseFlags = ['KR', 'FR', 'DE', 'GB', 'CA', 'BR', 'IT', 'ES', 'AU', 'CH'];
-        
-        // 2쌍씩 20개 매핑
-        this.therapyCards = [...baseFlags, ...baseFlags];
+        // [부품 위임] 엔진에게 Fisher-Yates 셔플링된 20개 국기 카드를 섞어오라고 시킵니다.
+        const shuffledFlags = this.gameEngine.generateShuffledCards();
 
-        // Fisher-Yates 무작위 셔플링 알고리즘
-        for (let i = this.therapyCards.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [this.therapyCards[i], this.therapyCards[j]] = [this.therapyCards[j], this.therapyCards[i]];
-        }
-
-        // A1~D5 (4열 x 5행 = 20개 셀) 타겟 좌표
         const targetCoords = [];
         const cols = ['A', 'B', 'C', 'D'];
         for (let r = 1; r <= 5; r++) {
@@ -1984,16 +1733,13 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         targetCoords.forEach((coord, idx) => {
             const td = document.querySelector(`.spreadsheet-cell[data-cell="${coord}"]`);
             if (td) {
-                const flagCode = this.therapyCards[idx];
+                const flagCode = shuffledFlags[idx];
                 const originalVal = td.textContent;
 
-                // 원래 텍스트 및 국기 코드 보존 백업
                 td.setAttribute('data-original-val', originalVal);
                 td.setAttribute('data-flag', flagCode);
                 td.className = 'spreadsheet-cell stealth-game-cell';
 
-                // Y축 3D 뒤집기가 작동하는 이너 구조 렌더링
-                // 윈도우 글자 깨짐 버그 해결을 위해 선명한 고해상도 Flag CDN 실물 img 연동
                 td.innerHTML = `
                     <div class="stealth-card-inner">
                         <div class="stealth-card-front">${originalVal}</div>
@@ -2003,9 +1749,8 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
                     </div>
                 `;
 
-                // td 내부에 직접적인 클릭 리스너 결합
                 td.addEventListener('click', (evt) => {
-                    evt.stopPropagation(); // 셀 자체 일반 네비게이션 전파 차단
+                    evt.stopPropagation();
                     this.handleCardClick(td);
                 });
             }
@@ -2013,15 +1758,11 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /**
-     * [5단계] 카드 클릭 핸들러: 플립 모션 작동 및 400ms 기민한 짝 맞추기 평가
+     * 카드 클릭 핸들러: 플립 모션 작동 및 400ms 기민한 짝 맞추기 평가
      */
     handleCardClick(cardEl) {
-        // 이미 짝이 맞춰진 카드 클릭 시에는 쉐이크 효과도 불필요하므로 무시
-        if (cardEl.classList.contains('matched')) {
-            return;
-        }
+        if (cardEl.classList.contains('matched')) return;
 
-        // 보드 잠금 상태이거나, 이미 뒤집힌 셀을 중복 클릭한 경우 (피드백 반영: 흔들림 쉐이크 발동)
         if (this.lockTherapyBoard || cardEl.classList.contains('flipped')) {
             cardEl.classList.add('stealth-shake');
             setTimeout(() => {
@@ -2030,118 +1771,81 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             return;
         }
 
-        // 카드 뒤집기 애니메이션 트리거
         cardEl.classList.add('flipped');
 
-        // 타이머 루프가 개시되지 않은 첫 카드 조작인 경우 타이머 가동
-        if (!this.therapyTimer) {
-            this.startTherapyTimer();
-        }
+        // [부품 위임] 첫 조작 시 엔진 시계 개시
+        this.gameEngine.startTimer();
 
         if (!this.firstFlippedCard) {
-            // A. 첫 번째 카드 클릭
             this.firstFlippedCard = cardEl;
         } else {
-            // B. 두 번째 카드 클릭 및 평가 연산 돌입
             this.secondFlippedCard = cardEl;
-            this.lockTherapyBoard = true; // 평가 중 광클 차단
+            this.lockTherapyBoard = true;
 
             const firstFlag = this.firstFlippedCard.getAttribute('data-flag');
             const secondFlag = this.secondFlippedCard.getAttribute('data-flag');
 
-            if (firstFlag === secondFlag) {
-                // 짝이 맞은 정답 판정 (.matched)
+            // [부품 위임] 매칭 판정을 엔진에 전격 위임합니다.
+            const isMatch = this.gameEngine.checkMatch(firstFlag, secondFlag);
+
+            if (isMatch) {
                 this.firstFlippedCard.classList.add('matched');
                 this.secondFlippedCard.classList.add('matched');
 
-                this.matchedCount++;
-                
-                // 성공 판정 메모리 비우기
                 this.firstFlippedCard = null;
                 this.secondFlippedCard = null;
                 this.lockTherapyBoard = false;
 
                 // 10쌍 올 클리어 도달 시 성공 모듈 구동
-                if (this.matchedCount === 10) {
+                if (this.gameEngine.matchedCount === 10) {
                     this.handleTherapyGameClear();
                 }
             } else {
-                // 불일치 시 기존 800ms에서 400ms로 전격 단축 (쾌속 플레이 반영)
+                // 불일치 시 400ms 전격 회전 단축 복귀
                 setTimeout(() => {
                     this.firstFlippedCard.classList.remove('flipped');
                     this.secondFlippedCard.classList.remove('flipped');
 
-                    // 메모리 복원 및 락 해제
                     this.firstFlippedCard = null;
                     this.secondFlippedCard = null;
                     this.lockTherapyBoard = false;
-                }, 400); // 0.4초 딜레이 튜닝
+                }, 400);
             }
         }
     }
 
     /**
-     * [5단계] 1초 간격의 힐링 경과 타이머 작동 개시
+     * 대시보드 경과 시간 00:00 분:초 단위 디스플레이 포맷팅
      */
-    startTherapyTimer() {
-        this.therapyTimeElapsed = 0;
-        this.therapyTimer = setInterval(() => {
-            this.therapyTimeElapsed++;
-            this.updateTherapyTimerDisplay();
-        }, 1000);
-    }
-
-    /**
-     * [5단계] 대시보드 경과 시간 00:00 분:초 단위 디스플레이 포맷팅
-     */
-    updateTherapyTimerDisplay() {
+    updateTherapyTimerDisplay(elapsedSeconds) {
         const timerVal = document.getElementById('therapy-timer-val');
         if (!timerVal) return;
 
-        const mins = Math.floor(this.therapyTimeElapsed / 60);
-        const secs = this.therapyTimeElapsed % 60;
+        const mins = Math.floor(elapsedSeconds / 60);
+        const secs = elapsedSeconds % 60;
         timerVal.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
 
     /**
-     * [5단계] 게임 올 클리어 연출 및 로컬스토리지 완료 레코드 영구 마킹
+     * 게임 올 클리어 연출 및 로컬스토리지 완료 레코드 영구 마킹
      */
     handleTherapyGameClear() {
-        // 1. 타이머 멈춤
-        if (this.therapyTimer) {
-            clearInterval(this.therapyTimer);
-        }
+        // [부품 위임] 타이머 멈춤
+        this.gameEngine.stopTimer();
 
-        // 2. 완료 일자, 시각 및 소요시간 획득
-        const now = new Date();
-        
-        // YYYY-MM-DD
-        const year = now.getFullYear();
-        const month = (now.getMonth() + 1).toString().padStart(2, '0');
-        const day = now.getDate().toString().padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-
-        // HH:MM (시:분만 표시 반영!)
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        const timeStr = `${hours}:${minutes}`;
-
-        // 소요시간 예쁘게 변환 (초 및 분초)
         let elapsedText = '';
-        if (this.therapyTimeElapsed < 60) {
-            elapsedText = `${this.therapyTimeElapsed}초`;
+        if (this.gameEngine.timeElapsed < 60) {
+            elapsedText = `${this.gameEngine.timeElapsed}초`;
         } else {
-            const m = Math.floor(this.therapyTimeElapsed / 60);
-            const s = this.therapyTimeElapsed % 60;
+            const m = Math.floor(this.gameEngine.timeElapsed / 60);
+            const s = this.gameEngine.timeElapsed % 60;
             elapsedText = `${m}분 ${s}초`;
         }
 
-        // 3. 로컬기록판 세션 적재
-        this.saveTherapyRecord(dateStr, timeStr, elapsedText, this.therapyTimeElapsed);
+        // [부품 위임] 점수 오토세이브 위임
+        const result = this.gameEngine.saveRecord(elapsedText);
 
-        // 4. 영광의 스텔스 성공 보고 모달 패널 동적 노출 (시트 뷰포트 위에 오버레이)
         const appContainer = document.querySelector('.app-container');
-        
         const successDiv = document.createElement('div');
         successDiv.className = 'stealth-success-panel';
         successDiv.id = 'stealth-success-panel';
@@ -2150,7 +1854,7 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
             <p style="color: #64748b; font-size: 0.85rem; margin-bottom:0.75rem;">A1:D5 업무 위장 범위의 모든 국기 짝을 정확히 맞추고 두뇌 회전을 끝마쳤습니다.</p>
             
             <div class="success-stats">
-                <strong>완료 일시:</strong> ${dateStr} ${timeStr}<br>
+                <strong>완료 일시:</strong> ${result ? result.dateStr : ''} ${result ? result.timeStr : ''}<br>
                 <strong>소요 시간:</strong> <span style="color: #107c41; font-weight:700;">${elapsedText}</span>
             </div>
 
@@ -2164,7 +1868,6 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
         // 명예의 전당 보드판 렌더링
         this.renderRecordBoard();
 
-        // 시트로 돌아가기 이벤트 바인딩
         const closeBtn = document.getElementById('therapy-close-btn');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.toggleTherapyMode());
@@ -2172,67 +1875,15 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
     }
 
     /**
-     * [5단계] 클리어한 타임 레코드를 로컬스토리지에 리스트화하여 누적 저장합니다.
-     */
-    saveTherapyRecord(date, time, elapsedStr, seconds) {
-        try {
-            const rawRecords = localStorage.getItem('pingpong_therapy_records');
-            let records = [];
-            if (rawRecords) {
-                records = JSON.parse(rawRecords);
-            }
-
-            // 새 레코드 삽입
-            records.push({
-                date: date,
-                time: time,
-                elapsed: elapsedStr,
-                seconds: seconds
-            });
-
-            // 소요 시간(초)이 적은 순으로 정렬하여 탑 랭킹 형성
-            records.sort((a, b) => a.seconds - b.seconds);
-
-            // 최대 10개 기록만 보존 관리
-            if (records.length > 10) {
-                records = records.slice(0, 10);
-            }
-
-            localStorage.setItem('pingpong_therapy_records', JSON.stringify(records));
-        } catch (e) {
-            console.error("기록 저장 중 로컬스토리지 장애:", e);
-        }
-    }
-
-    /**
-     * [5단계] 역대 1위 최고 기록(Best Record) 스트링 획득
-     */
-    getBestRecord() {
-        try {
-            const rawRecords = localStorage.getItem('pingpong_therapy_records');
-            if (rawRecords) {
-                const records = JSON.parse(rawRecords);
-                if (records.length > 0) {
-                    return records[0].elapsed; // 최단 시간 소요값 반환
-                }
-            }
-        } catch (e) {}
-        return null;
-    }
-
-    /**
-     * [5단계] 명예의 전당 기록 리스트를 이쁘게 렌더링합니다.
+     * 명예의 전당 기록 리스트를 화면에 렌더링합니다. (순수 DOM 작업)
      */
     renderRecordBoard() {
         const container = document.getElementById('record-board-container');
         if (!container) return;
 
         try {
-            const rawRecords = localStorage.getItem('pingpong_therapy_records');
-            let records = [];
-            if (rawRecords) {
-                records = JSON.parse(rawRecords);
-            }
+            // [부품 위임] 저장된 전체 랭킹 목록을 엔진에서 꺼내옵니다.
+            const records = this.gameEngine.getRecords();
 
             if (records.length === 0) {
                 container.innerHTML = `<div style="text-align:center; color:#a855f7; font-size:0.75rem;">아직 수립된 기록이 없습니다.</div>`;
@@ -2245,7 +1896,6 @@ Office 365\tBusiness\t50\t12100\t605000\t라이선스\t소프트웨어\t한지�
                 </div>
             `;
 
-            // 최대 5개 기록 노출
             records.slice(0, 5).forEach((rec, idx) => {
                 const rankIcon = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}위`;
                 html += `
